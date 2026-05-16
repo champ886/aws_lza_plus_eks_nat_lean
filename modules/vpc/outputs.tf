@@ -61,3 +61,10 @@ output "private_route_table_az_b_id" {
   description = "ID of the AZ-b private route table"
   value       = aws_route_table.private[1].id
 }
+
+output "nat_gateway_id" {
+  value = length(aws_nat_gateway.main) > 0 ? aws_nat_gateway.main[0].id : null
+}
+output "private_route_table_ids" {
+  value = aws_route_table.private[*].id
+}

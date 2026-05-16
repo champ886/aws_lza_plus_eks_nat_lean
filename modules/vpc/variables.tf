@@ -52,3 +52,9 @@ variable "availability_zones" {
   description = "Availability zones"
   type        = list(string)
 }
+
+variable "enable_nat_gateway" {
+  description = "Single shared NAT GW in AZ-a — cost-optimised for dev"
+  type        = bool
+  default     = false
+}
