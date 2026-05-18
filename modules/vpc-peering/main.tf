@@ -1,8 +1,4 @@
-# -----------------------------------------------
-# PROVIDER REQUIREMENTS
-# Peering needs providers for both accounts
-# as the connection spans two AWS accounts
-# -----------------------------------------------
+# ── Provider requirements — spans two AWS accounts ────────────────────────
 terraform {
   required_providers {
     aws = {
@@ -12,12 +8,7 @@ terraform {
   }
 }
 
-# -----------------------------------------------
-# VPC PEERING CONNECTION REQUEST
-# Initiated from the requester account (workload)
-# pointing to the accepter account (security)
-# auto_accept must be false on requester side
-# -----------------------------------------------
+# ── Peering connection request (from workload account) ────────────────────
 resource "aws_vpc_peering_connection" "main" {
   provider      = aws.requester
   vpc_id        = var.requester_vpc_id
@@ -25,7 +16,6 @@ resource "aws_vpc_peering_connection" "main" {
   peer_owner_id = var.accepter_account_id
   peer_region   = var.aws_region
   auto_accept   = false
-
   tags = {
     Name        = "${var.environment}-${var.peering_name}-peering"
     Environment = var.environment
@@ -33,18 +23,11 @@ resource "aws_vpc_peering_connection" "main" {
   }
 }
 
-# -----------------------------------------------
-# VPC PEERING CONNECTION ACCEPTER
-# Automatically accepts the peering request
-# from the accepter account (security)
-# Safe to auto accept as both accounts are
-# in the same AWS Organization and region
-# -----------------------------------------------
+# ── Accept peering from security account ──────────────────────────────────
 resource "aws_vpc_peering_connection_accepter" "main" {
   provider                  = aws.accepter
   vpc_peering_connection_id = aws_vpc_peering_connection.main.id
   auto_accept               = true
-
   tags = {
     Name        = "${var.environment}-${var.peering_name}-peering"
     Environment = var.environment
@@ -52,96 +35,84 @@ resource "aws_vpc_peering_connection_accepter" "main" {
   }
 }
 
-# -----------------------------------------------
-# PEERING OPTIONS - REQUESTER
-# Enables DNS resolution from requester VPC
-# so hostnames in security VPC resolve correctly
-# from within the workload VPC
-# Must be applied after accepter is active
-# -----------------------------------------------
+# ── Enable DNS resolution across peering ──────────────────────────────────
 resource "aws_vpc_peering_connection_options" "requester" {
   provider                  = aws.requester
   vpc_peering_connection_id = aws_vpc_peering_connection_accepter.main.id
-
   requester {
     allow_remote_vpc_dns_resolution = true
   }
-
   depends_on = [aws_vpc_peering_connection_accepter.main]
 }
 
-# -----------------------------------------------
-# PEERING OPTIONS - ACCEPTER
-# Enables DNS resolution from accepter VPC
-# so hostnames in workload VPC resolve correctly
-# from within the security VPC
-# -----------------------------------------------
 resource "aws_vpc_peering_connection_options" "accepter" {
   provider                  = aws.accepter
   vpc_peering_connection_id = aws_vpc_peering_connection_accepter.main.id
-
   accepter {
     allow_remote_vpc_dns_resolution = true
   }
-
   depends_on = [aws_vpc_peering_connection_accepter.main]
 }
 
-# -----------------------------------------------
-# REQUESTER PRIVATE ROUTE - AZ A
-# Adds route in AZ-a private route table of
-# requester VPC pointing to accepter VPC CIDR
-# via the peering connection
-# -----------------------------------------------
+# ──────────────────────────────────────────────────────────────────────────
+# INTRA-AZ ROUTES — AZ-a routes to AZ-a, AZ-b routes to AZ-b
+# VPC peering is free within region; keeping traffic in same AZ
+# avoids $0.01/GB inter-AZ data transfer charge
+# ──────────────────────────────────────────────────────────────────────────
+
+# Requester AZ-a → accepter VPC CIDR
 resource "aws_route" "requester_to_accepter_az_a" {
   provider                  = aws.requester
   route_table_id            = var.requester_route_table_az_a_id
   destination_cidr_block    = var.accepter_vpc_cidr
   vpc_peering_connection_id = aws_vpc_peering_connection.main.id
-
-  depends_on = [aws_vpc_peering_connection_accepter.main]
+  depends_on                = [aws_vpc_peering_connection_accepter.main]
 }
 
-# -----------------------------------------------
-# REQUESTER PRIVATE ROUTE - AZ B
-# Adds route in AZ-b private route table of
-# requester VPC pointing to accepter VPC CIDR
-# -----------------------------------------------
+# Requester AZ-b → accepter VPC CIDR
 resource "aws_route" "requester_to_accepter_az_b" {
   provider                  = aws.requester
   route_table_id            = var.requester_route_table_az_b_id
   destination_cidr_block    = var.accepter_vpc_cidr
   vpc_peering_connection_id = aws_vpc_peering_connection.main.id
-
-  depends_on = [aws_vpc_peering_connection_accepter.main]
+  depends_on                = [aws_vpc_peering_connection_accepter.main]
 }
 
-# -----------------------------------------------
-# ACCEPTER PRIVATE ROUTE - AZ A
-# Adds route in AZ-a private route table of
-# accepter (security) VPC pointing back to
-# requester VPC CIDR via peering connection
-# -----------------------------------------------
+# ── DEFAULT ROUTE: dev internet egress via security VPC NAT GW ────────────
+# AZ-a: routes via peering to security VPC (lands in AZ-a, hits NAT GW az-a)
+resource "aws_route" "requester_default_egress_az_a" {
+  count                     = var.route_internet_via_accepter ? 1 : 0
+  provider                  = aws.requester
+  route_table_id            = var.requester_route_table_az_a_id
+  destination_cidr_block    = "0.0.0.0/0"
+  vpc_peering_connection_id = aws_vpc_peering_connection.main.id
+  depends_on                = [aws_vpc_peering_connection_accepter.main]
+}
+
+# AZ-b: also routes via peering → arrives in security AZ-a (single NAT GW)
+# This crosses AZ only inside security VPC — accepted trade-off for 1 NAT GW
+resource "aws_route" "requester_default_egress_az_b" {
+  count                     = var.route_internet_via_accepter ? 1 : 0
+  provider                  = aws.requester
+  route_table_id            = var.requester_route_table_az_b_id
+  destination_cidr_block    = "0.0.0.0/0"
+  vpc_peering_connection_id = aws_vpc_peering_connection.main.id
+  depends_on                = [aws_vpc_peering_connection_accepter.main]
+}
+
+# ── RETURN ROUTES: security → dev/prod VPC CIDRs ──────────────────────────
 resource "aws_route" "accepter_to_requester_az_a" {
   provider                  = aws.accepter
   route_table_id            = var.accepter_route_table_az_a_id
   destination_cidr_block    = var.requester_vpc_cidr
   vpc_peering_connection_id = aws_vpc_peering_connection.main.id
-
-  depends_on = [aws_vpc_peering_connection_accepter.main]
+  depends_on                = [aws_vpc_peering_connection_accepter.main]
 }
 
-# -----------------------------------------------
-# ACCEPTER PRIVATE ROUTE - AZ B
-# Adds route in AZ-b private route table of
-# accepter (security) VPC pointing back to
-# requester VPC CIDR
-# -----------------------------------------------
 resource "aws_route" "accepter_to_requester_az_b" {
   provider                  = aws.accepter
   route_table_id            = var.accepter_route_table_az_b_id
   destination_cidr_block    = var.requester_vpc_cidr
   vpc_peering_connection_id = aws_vpc_peering_connection.main.id
-
-  depends_on = [aws_vpc_peering_connection_accepter.main]
+  depends_on                = [aws_vpc_peering_connection_accepter.main]
 }

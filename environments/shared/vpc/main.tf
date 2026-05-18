@@ -4,12 +4,10 @@
 # Both environments assume role into this account
 # for security monitoring and tooling
 # -----------------------------------------------
+# ── Security VPC — single NAT GW in AZ-a, shared egress for all envs ──────
 module "vpc_security" {
-  source = "../../../modules/vpc"
-
-  providers = {
-    aws = aws.security
-  }
+  source    = "../../../modules/vpc"
+  providers = { aws = aws.security }
 
   environment          = var.environment
   account_name         = "security"
@@ -17,4 +15,5 @@ module "vpc_security" {
   public_subnet_cidrs  = var.security_public_subnet_cidrs
   private_subnet_cidrs = var.security_private_subnet_cidrs
   availability_zones   = var.availability_zones
+  enable_nat_gateway   = true
 }

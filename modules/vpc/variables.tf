@@ -54,7 +54,7 @@ variable "availability_zones" {
 }
 
 variable "enable_nat_gateway" {
-  description = "Single shared NAT GW in AZ-a — cost-optimised for dev"
+  description = "Create a single NAT GW in AZ-a — only enabled in security VPC"
   type        = bool
   default     = false
 }
