@@ -1,6 +1,6 @@
 data "aws_region" "current" {}
 
-# ── Interface endpoints — ECR/STS/logs/EC2 stay inside AWS ────────────────
+# Interface endpoints - ECR/STS/logs/EC2 stay inside AWS
 resource "aws_vpc_endpoint" "interface" {
   for_each = {
     ecr_api = "com.amazonaws.${data.aws_region.current.name}.ecr.api"
@@ -21,7 +21,7 @@ resource "aws_vpc_endpoint" "interface" {
   }
 }
 
-# ── S3 gateway endpoint — free, avoids NAT for ECR image layers ───────────
+# S3 gateway endpoint - free, avoids NAT for ECR image layers
 resource "aws_vpc_endpoint" "s3" {
   vpc_id            = var.vpc_id
   service_name      = "com.amazonaws.${data.aws_region.current.name}.s3"

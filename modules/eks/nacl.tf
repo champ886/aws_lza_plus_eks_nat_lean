@@ -1,4 +1,4 @@
-# ── NACL on private subnets — allow 443 out + security VPC, deny all else ─
+# NACL on private subnets - allow 443 out + security VPC
 resource "aws_network_acl" "private_eks" {
   vpc_id     = var.vpc_id
   subnet_ids = var.private_subnet_ids
@@ -16,7 +16,6 @@ resource "aws_network_acl_rule" "e_https" {
   to_port        = 443
 }
 
-# Allow all egress to security VPC (peering path for NAT GW)
 resource "aws_network_acl_rule" "e_security_vpc" {
   network_acl_id = aws_network_acl.private_eks.id
   rule_number    = 105
@@ -83,7 +82,6 @@ resource "aws_network_acl_rule" "i_vpc" {
   to_port        = 0
 }
 
-# Allow return traffic from security VPC
 resource "aws_network_acl_rule" "i_security_vpc" {
   network_acl_id = aws_network_acl.private_eks.id
   rule_number    = 130

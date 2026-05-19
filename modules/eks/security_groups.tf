@@ -19,7 +19,7 @@ resource "aws_security_group" "alb" {
   tags        = { Name = "${var.environment}-eks-alb-sg" }
 }
 
-# Nodes: HTTPS egress (public registry pulls via peering → security NAT GW)
+# Nodes: HTTPS egress
 resource "aws_security_group_rule" "nodes_egress_https" {
   type              = "egress"
   from_port         = 443
@@ -41,7 +41,7 @@ resource "aws_security_group_rule" "nodes_egress_vpc" {
   description       = "Full intra-VPC traffic"
 }
 
-# Nodes: egress to security VPC (peering path)
+# Nodes: egress to security VPC
 resource "aws_security_group_rule" "nodes_egress_security_vpc" {
   type              = "egress"
   from_port         = 0

@@ -1,4 +1,4 @@
-# ── Cluster IAM role ───────────────────────────────────────────────────────
+# Cluster IAM role
 resource "aws_iam_role" "cluster" {
   name = "${var.environment}-eks-cluster-role"
   assume_role_policy = jsonencode({
@@ -17,7 +17,7 @@ resource "aws_iam_role_policy_attachment" "cluster_policy" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
 }
 
-# ── EKS cluster ────────────────────────────────────────────────────────────
+# EKS cluster
 resource "aws_eks_cluster" "main" {
   name     = var.cluster_name
   version  = var.cluster_version
@@ -35,7 +35,7 @@ resource "aws_eks_cluster" "main" {
   depends_on = [aws_iam_role_policy_attachment.cluster_policy]
 }
 
-# ── OIDC provider — enables IRSA for all add-ons ──────────────────────────
+# OIDC provider - enables IRSA for all add-ons
 data "tls_certificate" "eks" {
   url = aws_eks_cluster.main.identity[0].oidc[0].issuer
 }
@@ -47,7 +47,7 @@ resource "aws_iam_openid_connect_provider" "eks" {
   tags            = { ManagedBy = "Terraform" }
 }
 
-# ── Node IAM role ──────────────────────────────────────────────────────────
+# Node IAM role
 resource "aws_iam_role" "node" {
   name = "${var.environment}-eks-node-role"
   assume_role_policy = jsonencode({
@@ -72,7 +72,7 @@ resource "aws_iam_role_policy_attachment" "node_policies" {
   policy_arn = each.value
 }
 
-# ── System node group — on-demand, hosts critical add-ons ─────────────────
+# System node group - on-demand, hosts critical add-ons
 resource "aws_eks_node_group" "system" {
   cluster_name    = aws_eks_cluster.main.name
   node_group_name = "${var.environment}-system"
@@ -103,7 +103,7 @@ resource "aws_eks_node_group" "system" {
   depends_on = [aws_iam_role_policy_attachment.node_policies]
 }
 
-# ── AWS-managed add-ons ────────────────────────────────────────────────────
+# AWS-managed add-ons
 resource "aws_eks_addon" "vpc_cni" {
   cluster_name                = aws_eks_cluster.main.name
   addon_name                  = "vpc-cni"

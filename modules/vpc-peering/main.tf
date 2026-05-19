@@ -1,4 +1,3 @@
-# ── Provider requirements — spans two AWS accounts ────────────────────────
 terraform {
   required_providers {
     aws = {
@@ -8,7 +7,7 @@ terraform {
   }
 }
 
-# ── Peering connection request (from workload account) ────────────────────
+# Peering connection request (from workload account)
 resource "aws_vpc_peering_connection" "main" {
   provider      = aws.requester
   vpc_id        = var.requester_vpc_id
@@ -23,7 +22,7 @@ resource "aws_vpc_peering_connection" "main" {
   }
 }
 
-# ── Accept peering from security account ──────────────────────────────────
+# Accept peering from security account
 resource "aws_vpc_peering_connection_accepter" "main" {
   provider                  = aws.accepter
   vpc_peering_connection_id = aws_vpc_peering_connection.main.id
@@ -35,7 +34,7 @@ resource "aws_vpc_peering_connection_accepter" "main" {
   }
 }
 
-# ── Enable DNS resolution across peering ──────────────────────────────────
+# Enable DNS resolution across peering
 resource "aws_vpc_peering_connection_options" "requester" {
   provider                  = aws.requester
   vpc_peering_connection_id = aws_vpc_peering_connection_accepter.main.id
@@ -54,11 +53,9 @@ resource "aws_vpc_peering_connection_options" "accepter" {
   depends_on = [aws_vpc_peering_connection_accepter.main]
 }
 
-# ──────────────────────────────────────────────────────────────────────────
-# INTRA-AZ ROUTES — AZ-a routes to AZ-a, AZ-b routes to AZ-b
-# VPC peering is free within region; keeping traffic in same AZ
-# avoids $0.01/GB inter-AZ data transfer charge
-# ──────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────
+# INTRA-AZ ROUTES - AZ-a routes to AZ-a, AZ-b routes to AZ-a
+# ─────────────────────────────────────────────────────────────────────────
 
 # Requester AZ-a → accepter VPC CIDR
 resource "aws_route" "requester_to_accepter_az_a" {
@@ -78,8 +75,7 @@ resource "aws_route" "requester_to_accepter_az_b" {
   depends_on                = [aws_vpc_peering_connection_accepter.main]
 }
 
-# ── DEFAULT ROUTE: dev internet egress via security VPC NAT GW ────────────
-# AZ-a: routes via peering to security VPC (lands in AZ-a, hits NAT GW az-a)
+# DEFAULT ROUTE: dev internet egress via security VPC NAT GW
 resource "aws_route" "requester_default_egress_az_a" {
   count                     = var.route_internet_via_accepter ? 1 : 0
   provider                  = aws.requester
@@ -89,8 +85,6 @@ resource "aws_route" "requester_default_egress_az_a" {
   depends_on                = [aws_vpc_peering_connection_accepter.main]
 }
 
-# AZ-b: also routes via peering → arrives in security AZ-a (single NAT GW)
-# This crosses AZ only inside security VPC — accepted trade-off for 1 NAT GW
 resource "aws_route" "requester_default_egress_az_b" {
   count                     = var.route_internet_via_accepter ? 1 : 0
   provider                  = aws.requester
@@ -100,7 +94,7 @@ resource "aws_route" "requester_default_egress_az_b" {
   depends_on                = [aws_vpc_peering_connection_accepter.main]
 }
 
-# ── RETURN ROUTES: security → dev/prod VPC CIDRs ──────────────────────────
+# RETURN ROUTES: security → dev VPC CIDR
 resource "aws_route" "accepter_to_requester_az_a" {
   provider                  = aws.accepter
   route_table_id            = var.accepter_route_table_az_a_id
