@@ -6,7 +6,7 @@ module "vpc_workload" {
   source = "../../../modules/vpc"
 
   providers = {
-    aws = aws.workload
+    aws = aws.dev_workload
   }
 
   environment          = var.environment

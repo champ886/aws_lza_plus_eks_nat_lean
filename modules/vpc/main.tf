@@ -1,14 +1,20 @@
-# -----------------------------------------------
-# PROVIDER REQUIREMENTS
-# -----------------------------------------------
+# ============================================================================
+# VPC MODULE - PROVIDER CONFIGURATION
+# ============================================================================
+# This module can work with any AWS provider passed to it
+# No specific provider alias required
+# ============================================================================
 terraform {
+  required_version = ">= 1.5.0"
   required_providers {
     aws = {
-      source = "hashicorp/aws"
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
     }
   }
 }
 
+# Rest of your VPC module code below...
 # -----------------------------------------------
 # VPC
 # DNS support and hostnames required for
