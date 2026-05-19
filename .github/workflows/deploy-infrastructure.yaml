@@ -1,0 +1,360 @@
+# ============================================================================
+# MAIN DEPLOYMENT PIPELINE - COMPLETE INFRASTRUCTURE ORCHESTRATION
+# ============================================================================
+# Purpose: Orchestrates deployment of entire AWS landing zone infrastructure
+#          in correct dependency order across multiple AWS accounts
+#
+# Deployment Order:
+#   1. Security VPC (shared/vpc)    - NAT Gateway, IGW, centralized egress
+#   2. Dev VPC (dev/vpc)            - Fully private workload VPC
+#   3. VPC Peering (peering)        - Cross-account connectivity + routing
+#   4. EKS Cluster (dev/eks)        - Kubernetes with managed node groups
+#
+# Trigger Methods:
+#   - Automatic: Push to main branch with changes to infrastructure code
+#   - Manual: workflow_dispatch button in GitHub Actions UI
+# ============================================================================
+
+name: Deploy Infrastructure
+
+# ============================================================================
+# WORKFLOW TRIGGERS
+# ============================================================================
+on:
+  # ──────────────────────────────────────────────────────────────────────
+  # AUTOMATIC TRIGGER: Git Push to Main Branch
+  # ──────────────────────────────────────────────────────────────────────
+  # Triggers when code is pushed to main AND changes affect infrastructure
+  push:
+    branches:
+      - main
+    paths:
+      # Only trigger if these directories changed (avoid unnecessary runs)
+      - 'modules/**'              # Terraform modules (VPC, EKS, peering)
+      - 'environments/**'         # Environment-specific configurations
+      - '.github/workflows/**'    # Pipeline definitions themselves
+
+  # ──────────────────────────────────────────────────────────────────────
+  # MANUAL TRIGGER: GitHub UI Button
+  # ──────────────────────────────────────────────────────────────────────
+  # Enables manual deployment via Actions tab → Run workflow button
+  # Useful for:
+  #   - Testing deployments without pushing code
+  #   - Re-running failed deployments
+  #   - Deploying from specific branches
+  workflow_dispatch:
+
+# ============================================================================
+# GITHUB ACTIONS PERMISSIONS
+# ============================================================================
+# Minimal permissions following principle of least privilege
+# These apply to the GITHUB_TOKEN automatically created for each workflow run
+permissions:
+  id-token: write   # Required: Enables OIDC authentication with AWS
+  contents: read    # Required: Allows reading repository code
+
+# ============================================================================
+# DEPLOYMENT JOBS
+# ============================================================================
+# Jobs run sequentially due to 'needs' dependencies
+# Each job calls the reusable terraform-apply.yml workflow
+# Secrets are automatically inherited from repository settings
+# ============================================================================
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────
+  # JOB 1: DEPLOY SECURITY VPC (SHARED ACCOUNT)
+  # ──────────────────────────────────────────────────────────────────────
+  # What it creates:
+  #   - VPC 10.1.0.0/16 in security account
+  #   - 1x NAT Gateway in AZ-a (shared by all workload VPCs)
+  #   - Internet Gateway for public internet access
+  #   - Public subnets (10.1.1.0/24, 10.1.2.0/24)
+  #   - Private subnets (10.1.3.0/24, 10.1.4.0/24)
+  #   - Route tables with NAT GW routing
+  #
+  # Why it's first:
+  #   - Dev/prod VPCs peer to this for internet egress
+  #   - Must exist before peering can be established
+  #
+  # Estimated runtime: 3-5 minutes
+  # ──────────────────────────────────────────────────────────────────────
+  deploy-shared-vpc:
+    uses: ./.github/workflows/terraform-apply.yml
+    with:
+      environment: shared                    # GitHub environment name
+      working-directory: environments/shared/vpc
+    secrets: inherit                         # Pass all secrets to reusable workflow
+
+  # ──────────────────────────────────────────────────────────────────────
+  # JOB 2: DEPLOY DEV VPC (DEV WORKLOAD ACCOUNT)
+  # ──────────────────────────────────────────────────────────────────────
+  # What it creates:
+  #   - VPC 10.0.0.0/16 in dev workload account
+  #   - Public subnets (10.0.1.0/24, 10.0.2.0/24)
+  #   - Private subnets (10.0.3.0/24, 10.0.4.0/24)
+  #   - Route tables (no NAT GW - fully private)
+  #   - NO Internet Gateway (routes via security VPC)
+  #
+  # Why it's second:
+  #   - Needs security VPC to exist for peering target
+  #   - Must be created before peering connection
+  #
+  # Dependency: Waits for deploy-shared-vpc to complete
+  # Estimated runtime: 2-3 minutes
+  # ──────────────────────────────────────────────────────────────────────
+  deploy-dev-vpc:
+    needs: deploy-shared-vpc                 # Sequential dependency
+    uses: ./.github/workflows/terraform-apply.yml
+    with:
+      environment: dev
+      working-directory: environments/dev/vpc
+    secrets: inherit
+
+  # ──────────────────────────────────────────────────────────────────────
+  # JOB 3: DEPLOY VPC PEERING (CROSS-ACCOUNT CONNECTIVITY)
+  # ──────────────────────────────────────────────────────────────────────
+  # What it creates:
+  #   - VPC peering connection: dev VPC ↔ security VPC
+  #   - VPC peering connection: prod VPC ↔ security VPC (if prod exists)
+  #   - Route table entries for intra-AZ traffic flow:
+  #       * Dev AZ-a → 0.0.0.0/0 → peering → Security AZ-a → NAT GW
+  #       * Dev AZ-b → 0.0.0.0/0 → peering → Security AZ-a → NAT GW
+  #   - Return routes from security VPC to workload VPCs
+  #   - DNS resolution enabled across peering
+  #
+  # Traffic Flow Example:
+  #   Pod in dev VPC → dev-private-rt-az-a → 0.0.0.0/0 → pcx-xxxxx →
+  #   security-private-rt-az-a → NAT GW (az-a) → IGW → internet
+  #
+  # Why it's third:
+  #   - Requires both VPCs to exist before connecting them
+  #   - Must be established before EKS nodes need internet access
+  #
+  # Dependency: Waits for deploy-dev-vpc to complete
+  # Estimated runtime: 1-2 minutes
+  # ──────────────────────────────────────────────────────────────────────
+  deploy-peering:
+    needs: deploy-dev-vpc                    # Sequential dependency
+    uses: ./.github/workflows/terraform-apply.yml
+    with:
+      environment: peering
+      working-directory: environments/peering
+    secrets: inherit
+
+  # ──────────────────────────────────────────────────────────────────────
+  # JOB 4: DEPLOY EKS CLUSTER (DEV WORKLOAD ACCOUNT)
+  # ──────────────────────────────────────────────────────────────────────
+  # What it creates:
+  #   - EKS 1.32 control plane
+  #   - OIDC provider for IRSA (IAM Roles for Service Accounts)
+  #   - Managed node group (2x t3.medium on-demand)
+  #   - System node taints for critical add-ons
+  #   - AWS-managed add-ons:
+  #       * vpc-cni (pod networking)
+  #       * coredns (DNS)
+  #       * kube-proxy (service networking)
+  #       * eks-pod-identity-agent
+  #   - Security groups:
+  #       * Cluster control plane SG
+  #       * Worker nodes SG
+  #       * ALB ingress SG
+  #   - VPC endpoints (ECR, STS, CloudWatch Logs, EC2, S3)
+  #   - Network ACLs on private subnets
+  #
+  # Why it's last:
+  #   - Requires dev VPC to exist (subnets, route tables)
+  #   - Requires peering for internet access (image pulls, API calls)
+  #   - Nodes immediately need connectivity to pull container images
+  #
+  # Internet Access Path:
+  #   EKS node → dev private subnet → peering → security NAT GW → internet
+  #
+  # Dependency: Waits for deploy-peering to complete
+  # Estimated runtime: 12-15 minutes (EKS cluster creation is slow)
+  # ──────────────────────────────────────────────────────────────────────
+  deploy-dev-eks:
+    needs: deploy-peering                    # Sequential dependency
+    uses: ./.github/workflows/terraform-apply.yml
+    with:
+      environment: dev
+      working-directory: environments/dev/eks
+    secrets: inherit
+
+# ============================================================================
+# WORKFLOW EXECUTION FLOW
+# ============================================================================
+#
+# Visualization of job dependencies:
+#
+#   deploy-shared-vpc (3-5 min)
+#         ↓
+#   deploy-dev-vpc (2-3 min)
+#         ↓
+#   deploy-peering (1-2 min)
+#         ↓
+#   deploy-dev-eks (12-15 min)
+#
+# Total estimated time: ~20-25 minutes for full stack deployment
+#
+# ============================================================================
+
+# ============================================================================
+# FAILURE HANDLING
+# ============================================================================
+# If any job fails:
+#   - Pipeline stops immediately (no subsequent jobs run)
+#   - Partial infrastructure may exist (e.g., VPCs created but EKS not)
+#   - Terraform state remains consistent (each job is atomic)
+#   - Re-run workflow to resume from failed step
+#   - Check CloudWatch Logs and AWS Console for error details
+#
+# Common Failure Scenarios:
+#   - Job 1 fails: Nothing deployed, safe to retry
+#   - Job 2 fails: Security VPC exists, safe to retry
+#   - Job 3 fails: Both VPCs exist, safe to retry
+#   - Job 4 fails: VPCs + peering exist, EKS partially created
+#
+# Recovery: Re-run workflow - Terraform will pick up where it left off
+# ============================================================================
+
+# ============================================================================
+# MONITORING & AUDIT
+# ============================================================================
+# Each workflow run creates audit trail:
+#
+# GitHub Actions:
+#   - Who: GitHub username that triggered workflow
+#   - When: Exact timestamp of workflow start
+#   - What: Commit SHA that triggered deployment
+#   - Logs: Complete console output for each step
+#
+# AWS CloudTrail:
+#   - Session Name: GitHubActions-{run_id}
+#   - All API calls traced to specific workflow run
+#   - Cross-account assume role events logged
+#
+# Terraform State:
+#   - S3 bucket: tf-state-landing-zone-champ-001
+#   - Separate state file per environment
+#   - Version history tracked in S3 versioning
+#   - State locks prevent concurrent modifications
+#
+# View logs:
+#   - GitHub: https://github.com/{org}/{repo}/actions
+#   - CloudTrail: Filter by session name "GitHubActions-*"
+#   - S3 State: Check .tfstate file metadata
+# ============================================================================
+
+# ============================================================================
+# COST IMPLICATIONS OF THIS DEPLOYMENT
+# ============================================================================
+# Resources created by this pipeline and their approximate monthly costs:
+#
+# Security VPC:
+#   - NAT Gateway:              ~$33/month (always on + data processing)
+#   - Elastic IP:               $0/month (attached to NAT GW)
+#   - VPC Peering data:         $0/month (within region)
+#
+# Dev VPC:
+#   - No NAT/IGW:               $0/month
+#   - VPC Endpoints:            ~$7/month (interface endpoints)
+#
+# EKS:
+#   - Control Plane:            $73/month ($0.10/hour)
+#   - 2x t3.medium nodes:       ~$60/month ($0.0416/hour × 2)
+#   - EBS volumes:              ~$10/month (gp3 for node storage)
+#
+# Total: ~$183/month
+#
+# Compare to traditional design with 2 NAT GWs per environment:
+#   Traditional: ~$330/month
+#   This design: ~$183/month
+#   Savings:     ~$147/month (~45% reduction)
+# ============================================================================
+
+# ============================================================================
+# SECURITY CONSIDERATIONS
+# ============================================================================
+# ✅ OIDC Authentication:
+#    - No long-lived AWS credentials stored in GitHub
+#    - Temporary credentials expire after workflow completes
+#    - GitHub token rotated automatically
+#
+# ✅ Least Privilege:
+#    - Each job runs with minimal required permissions
+#    - Cross-account access via OrganizationAccountAccessRole
+#    - Terraform backend encrypted in S3
+#
+# ✅ State Locking:
+#    - DynamoDB prevents concurrent modifications
+#    - Race conditions eliminated
+#    - State corruption prevented
+#
+# ✅ Secrets Management:
+#    - Account IDs stored as GitHub encrypted secrets
+#    - Secrets never logged or exposed in plan output
+#    - TF_VAR_ injection at runtime only
+#
+# ✅ Network Isolation:
+#    - Dev VPC has no direct internet access
+#    - All egress through centralized security VPC
+#    - Peering connections isolated (dev cannot reach prod)
+#
+# ✅ Audit Trail:
+#    - Every deployment logged in GitHub Actions
+#    - CloudTrail tracks all AWS API calls
+#    - Terraform state history in S3 versioning
+# ============================================================================
+
+# ============================================================================
+# EXTENDING THIS PIPELINE
+# ============================================================================
+# To add production environment:
+#
+# 1. Add prod VPC job after deploy-dev-vpc:
+#    deploy-prod-vpc:
+#      needs: deploy-shared-vpc
+#      uses: ./.github/workflows/terraform-apply.yml
+#      with:
+#        environment: prod
+#        working-directory: environments/prod/vpc
+#      secrets: inherit
+#
+# 2. Peering job already handles prod (check environments/peering/main.tf)
+#
+# 3. Add prod EKS job after deploy-peering:
+#    deploy-prod-eks:
+#      needs: deploy-peering
+#      uses: ./.github/workflows/terraform-apply.yml
+#      with:
+#        environment: prod
+#        working-directory: environments/prod/eks
+#      secrets: inherit
+#
+# Jobs can run in parallel if no dependencies:
+#   deploy-dev-vpc and deploy-prod-vpc can both depend on deploy-shared-vpc
+#   and run simultaneously to speed up deployment
+# ============================================================================
+
+# ============================================================================
+# TROUBLESHOOTING COMMON ISSUES
+# ============================================================================
+# Issue: "Role cannot be assumed"
+# Fix: Verify bootstrap was run and AWS_ROLE_ARN secret is correct
+#
+# Issue: "Terraform state locked"
+# Fix: Check DynamoDB table for stuck lock, manually remove if needed
+#
+# Issue: "VPC not found"
+# Fix: Previous job may have failed, check logs for actual error
+#
+# Issue: "No changes to apply"
+# Fix: Expected behavior when infrastructure already exists (idempotent)
+#
+# Issue: "Rate limit exceeded"
+# Fix: AWS API throttling, wait 5 minutes and re-run
+#
+# Issue: Workflow not triggering automatically
+# Fix: Verify paths filter matches your changed files, or use workflow_dispatch
+# ============================================================================
