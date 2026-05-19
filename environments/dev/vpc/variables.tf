@@ -1,33 +1,62 @@
+# ============================================================================
+# DEV VPC STACK VARIABLES
+# ============================================================================
+# Variables for the dev workload VPC configuration
+# Non-secret values stored in vars.auto.tfvars (safe to commit)
+# Secret values injected via GitHub Actions as TF_VAR_ environment variables
+# ============================================================================
+
 variable "aws_region" {
-  type    = string
-  default = "ap-southeast-2"
+  description = "AWS region for deployment"
+  type        = string
+  default     = "ap-southeast-2"
 }
 
 variable "environment" {
-  type    = string
-  default = "dev"
+  description = "Environment name (dev, staging, prod)"
+  type        = string
+  default     = "dev"
 }
 
+# ──────────────────────────────────────────────────────────────────────────
+# AWS ACCOUNT ID (Injected as Secret from GitHub Actions)
+# ──────────────────────────────────────────────────────────────────────────
 variable "dev_workload_account_id" {
-  type = string
+  description = "AWS account ID for dev workload account"
+  type        = string
+  sensitive   = true
 }
 
-variable "dev_vpc_cidr" {
-  type    = string
-  default = "10.0.0.0/16"
+# ──────────────────────────────────────────────────────────────────────────
+# VPC CIDR BLOCKS
+# ──────────────────────────────────────────────────────────────────────────
+variable "workload_vpc_cidr" {
+  description = "CIDR block for dev workload VPC"
+  type        = string
+  default     = "10.0.0.0/16"
 }
 
-variable "dev_public_subnet_cidrs" {
-  type    = list(string)
-  default = ["10.0.1.0/24", "10.0.2.0/24"]
+# ──────────────────────────────────────────────────────────────────────────
+# SUBNET CIDR BLOCKS
+# ──────────────────────────────────────────────────────────────────────────
+variable "workload_public_subnet_cidrs" {
+  description = "CIDR blocks for public subnets in dev VPC"
+  type        = list(string)
+  default     = ["10.0.1.0/24", "10.0.2.0/24"]
 }
 
-variable "dev_private_subnet_cidrs" {
-  type    = list(string)
-  default = ["10.0.3.0/24", "10.0.4.0/24"]
+variable "workload_private_subnet_cidrs" {
+  description = "CIDR blocks for private subnets in dev VPC"
+  type        = list(string)
+  default     = ["10.0.3.0/24", "10.0.4.0/24"]
 }
 
+# ──────────────────────────────────────────────────────────────────────────
+# AVAILABILITY ZONES
+# ──────────────────────────────────────────────────────────────────────────
 variable "availability_zones" {
-  type    = list(string)
-  default = ["ap-southeast-2a", "ap-southeast-2b"]
+  description = "List of availability zones for subnet placement"
+  type        = list(string)
+  default     = ["ap-southeast-2a", "ap-southeast-2b"]
 }
+
