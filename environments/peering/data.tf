@@ -1,0 +1,105 @@
+# -----------------------------------------------
+# DATA SOURCES - REMOTE STATE
+# -----------------------------------------------
+
+# Shared Security VPC state
+data "terraform_remote_state" "shared_vpc" {
+  backend = "s3"
+  config = {
+    bucket = "tf-state-landing-zone-champ-001"
+    key    = "aws-lza/shared/vpc/terraform.tfstate"
+    region = "ap-southeast-2"
+  }
+}
+
+# Dev VPC state
+data "terraform_remote_state" "dev_vpc" {
+  backend = "s3"
+  config = {
+    bucket = "tf-state-landing-zone-champ-001"
+    key    = "aws-lza/dev/vpc/terraform.tfstate"
+    region = "ap-southeast-2"
+  }
+}
+
+# Prod VPC state (add this)
+data "terraform_remote_state" "prod_vpc" {
+  backend = "s3"
+  config = {
+    bucket = "tf-state-landing-zone-champ-001"
+    key    = "aws-lza/prod/vpc/terraform.tfstate"
+    region = "ap-southeast-2"
+  }
+}
+
+# -----------------------------------------------
+# DATA SOURCES - DEV WORKLOAD VPC & ROUTE TABLES
+# -----------------------------------------------
+data "aws_vpc" "dev_workload" {
+  provider   = aws.dev_workload
+  cidr_block = var.dev_vpc_cidr
+}
+
+data "aws_route_table" "dev_workload_private_az_a" {
+  provider = aws.dev_workload
+  filter {
+    name   = "tag:Name"
+    values = ["dev-dev-private-rt-1"]  # ← matches your VPC module naming
+  }
+}
+
+data "aws_route_table" "dev_workload_private_az_b" {
+  provider = aws.dev_workload
+  filter {
+    name   = "tag:Name"
+    values = ["dev-dev-private-rt-2"]  # ← matches your VPC module naming
+  }
+}
+
+# -----------------------------------------------
+# DATA SOURCES - PROD WORKLOAD VPC & ROUTE TABLES
+# -----------------------------------------------
+data "aws_vpc" "prod_workload" {
+  provider   = aws.prod_workload
+  cidr_block = var.prod_vpc_cidr
+}
+
+data "aws_route_table" "prod_workload_private_az_a" {
+  provider = aws.prod_workload
+  filter {
+    name   = "tag:Name"
+    values = ["prod-prod-private-rt-1"]  # ← matches your VPC module naming
+  }
+}
+
+data "aws_route_table" "prod_workload_private_az_b" {
+  provider = aws.prod_workload
+  filter {
+    name   = "tag:Name"
+    values = ["prod-prod-private-rt-2"]  # ← matches your VPC module naming
+  }
+}
+
+# -----------------------------------------------
+# DATA SOURCES - SECURITY VPC & ROUTE TABLES
+# -----------------------------------------------
+data "aws_vpc" "security" {
+  provider   = aws.security
+  cidr_block = var.security_vpc_cidr
+}
+
+data "aws_route_table" "security_private_az_a" {
+  provider = aws.security
+  filter {
+    name   = "tag:Name"
+    values = ["shared-security-private-rt-1"]
+  }
+}
+
+data "aws_route_table" "security_private_az_b" {
+  provider = aws.security
+  filter {
+    name   = "tag:Name"
+    values = ["shared-security-private-rt-2"]
+  }
+}

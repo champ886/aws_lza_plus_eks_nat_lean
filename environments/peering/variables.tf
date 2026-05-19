@@ -32,20 +32,18 @@ variable "security_account_id" {
 # Used by data sources to look up existing VPCs
 # Must match exactly what was deployed
 # -----------------------------------------------
-variable "dev_workload_vpc_cidr" {
-  description = "CIDR of the dev workload VPC"
-  type        = string
-  default     = "10.0.0.0/16"
-}
-
-variable "prod_workload_vpc_cidr" {
-  description = "CIDR of the prod workload VPC"
-  type        = string
-  default     = "10.2.0.0/16"
-}
-
 variable "security_vpc_cidr" {
   description = "CIDR of the shared security VPC"
   type        = string
   default     = "10.1.0.0/16"
+}
+
+variable "dev_vpc_cidr" {
+  type    = string
+  default = "10.0.0.0/16"
+}
+
+variable "prod_vpc_cidr" {
+  type    = string
+  default = "10.2.0.0/16"
 }

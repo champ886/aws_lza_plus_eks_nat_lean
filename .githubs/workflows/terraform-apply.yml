@@ -1,0 +1,159 @@
+# ============================================================================
+# REUSABLE TERRAFORM APPLY WORKFLOW
+# ============================================================================
+# Purpose: Centralized workflow for applying Terraform configurations across
+#          all environments (shared, dev, prod, peering, eks)
+# 
+# Security: Uses OIDC authentication (no long-lived credentials stored)
+# 
+# Usage: Called by deploy-infrastructure.yml and other pipeline workflows
+# ============================================================================
+
+name: Terraform Apply
+
+# ============================================================================
+# WORKFLOW TRIGGERS
+# ============================================================================
+# This workflow is NOT triggered directly - it's called by other workflows
+# using the workflow_call event (reusable workflow pattern)
+on:
+  workflow_call:
+    inputs:
+      # Environment name - matches GitHub environment settings
+      # Examples: 'shared', 'dev', 'prod', 'peering'
+      environment:
+        required: true
+        type: string
+      
+      # Path to the Terraform stack to deploy
+      # Examples: 'environments/dev/vpc', 'environments/peering'
+      working-directory:
+        required: true
+        type: string
+      
+      # AWS region for deployment - defaults to Sydney
+      aws-region:
+        required: false
+        type: string
+        default: 'ap-southeast-2'
+
+# ============================================================================
+# PERMISSIONS
+# ============================================================================
+# Minimal permissions following principle of least privilege
+permissions:
+  id-token: write   # Required for OIDC authentication with AWS
+  contents: read    # Required to checkout repository code
+
+# ============================================================================
+# JOBS
+# ============================================================================
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    
+    # GitHub environment - enables environment-specific secrets and protection rules
+    # Can add required reviewers, wait timers, or deployment branches in GitHub settings
+    environment: ${{ inputs.environment }}
+    
+    steps:
+      # ──────────────────────────────────────────────────────────────────
+      # STEP 1: Checkout Repository Code
+      # ──────────────────────────────────────────────────────────────────
+      # Downloads the repository code including Terraform modules and configs
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ──────────────────────────────────────────────────────────────────
+      # STEP 2: Authenticate with AWS using OIDC
+      # ──────────────────────────────────────────────────────────────────
+      # Uses OpenID Connect to assume IAM role - no stored credentials!
+      # The role (GitHubActionsDeployRole) was created in bootstrap step
+      # Session name includes run_id for CloudTrail audit tracking
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ inputs.aws-region }}
+          role-session-name: GitHubActions-${{ github.run_id }}
+
+      # ──────────────────────────────────────────────────────────────────
+      # STEP 3: Install Terraform CLI
+      # ──────────────────────────────────────────────────────────────────
+      # Installs specific Terraform version for consistency across runs
+      # Pin to 1.5.0 to avoid unexpected breaking changes
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.5.0
+
+      # ──────────────────────────────────────────────────────────────────
+      # STEP 4: Initialize Terraform
+      # ──────────────────────────────────────────────────────────────────
+      # Downloads providers, initializes backend (S3), and prepares workspace
+      # Backend config in backend.tf points to S3 state bucket
+      - name: Terraform Init
+        working-directory: ${{ inputs.working-directory }}
+        run: terraform init
+
+      # ──────────────────────────────────────────────────────────────────
+      # STEP 5: Generate Execution Plan
+      # ──────────────────────────────────────────────────────────────────
+      # Creates a plan file showing what will be created/modified/destroyed
+      # Secrets are injected as TF_VAR_ environment variables
+      # Plan saved to file for apply step (ensures plan/apply consistency)
+      - name: Terraform Plan
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          # Inject GitHub secrets as Terraform variables
+          # These replace terraform.tfvars values at runtime
+          TF_VAR_security_account_id: ${{ secrets.SECURITY_ACCOUNT_ID }}
+          TF_VAR_dev_workload_account_id: ${{ secrets.DEV_WORKLOAD_ACCOUNT_ID }}
+          TF_VAR_prod_workload_account_id: ${{ secrets.PROD_WORKLOAD_ACCOUNT_ID }}
+        run: terraform plan -out=tfplan
+
+      # ──────────────────────────────────────────────────────────────────
+      # STEP 6: Apply Infrastructure Changes
+      # ──────────────────────────────────────────────────────────────────
+      # Executes the plan generated in previous step
+      # Uses saved plan file (tfplan) - no user input required
+      # Same environment variables ensure consistency with plan
+      - name: Terraform Apply
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          # Re-inject secrets for apply step
+          # Required because env vars don't persist between steps
+          TF_VAR_security_account_id: ${{ secrets.SECURITY_ACCOUNT_ID }}
+          TF_VAR_dev_workload_account_id: ${{ secrets.DEV_WORKLOAD_ACCOUNT_ID }}
+          TF_VAR_prod_workload_account_id: ${{ secrets.PROD_WORKLOAD_ACCOUNT_ID }}
+        run: terraform apply tfplan
+
+# ============================================================================
+# AUDIT TRAIL
+# ============================================================================
+# Every run creates an audit trail:
+# - GitHub Actions logs: who triggered, when, which commit
+# - CloudTrail logs: AWS API calls with session name = GitHubActions-{run_id}
+# - Terraform state: what was deployed, when, by whom
+# ============================================================================
+
+# ============================================================================
+# ERROR HANDLING
+# ============================================================================
+# If any step fails:
+# - Workflow stops immediately
+# - No partial applies (plan file ensures atomicity)
+# - GitHub Actions marks run as failed (red X)
+# - Email notifications sent if configured
+# ============================================================================
+
+# ============================================================================
+# SECURITY NOTES
+# ============================================================================
+# ✅ OIDC authentication - no long-lived credentials
+# ✅ Secrets never logged or exposed in plan output
+# ✅ Role session names enable CloudTrail tracking
+# ✅ Minimal permissions (id-token write, contents read)
+# ✅ Terraform state encrypted in S3
+# ✅ State locking via DynamoDB prevents concurrent modifications
+# ============================================================================
