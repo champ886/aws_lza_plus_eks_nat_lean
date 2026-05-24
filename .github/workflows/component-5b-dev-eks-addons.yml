@@ -86,7 +86,7 @@ jobs:
     needs: plan
     if: inputs.action == 'apply' || inputs.action == 'destroy'
     environment: dev
-    timeout-minutes: 15
+    timeout-minutes: 60
     
     steps:
       - name: Checkout
