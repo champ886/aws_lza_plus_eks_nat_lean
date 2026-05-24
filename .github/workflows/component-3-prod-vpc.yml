@@ -1,7 +1,14 @@
-name: Prod VPC
+# ============================================================================
+# DEV VPC DEPLOYMENT WORKFLOW
+# ============================================================================
+# Purpose: Deploy/destroy the dev workload VPC (private, no NAT)
+# Approval: Required via GitHub Environment "dev"
+# Dependencies: Should be deployed after security VPC
+# ============================================================================
+
+name: 2️⃣ Dev VPC
 
 on:
-  # ONLY manual trigger - safer for infrastructure
   workflow_dispatch:
     inputs:
       action:
@@ -9,9 +16,9 @@ on:
         required: true
         type: choice
         options:
-          - plan    # Safe - just shows changes
-          - apply   # Deploys changes
-          - destroy # Removes resources
+          - plan
+          - apply
+          - destroy
         default: 'plan'
 
 permissions:
@@ -19,43 +26,112 @@ permissions:
   contents: read
 
 jobs:
-  prod-vpc:
+  # ════════════════════════════════════════════════════════════════════════
+  # JOB 1: PLAN (No approval required)
+  # ════════════════════════════════════════════════════════════════════════
+  plan:
     runs-on: ubuntu-latest
-    environment: prod
     
     steps:
-      - uses: actions/checkout@v4
-      
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ap-southeast-2
-          role-session-name: GitHubActions-${{ github.run_id }}
-      
+          role-session-name: GitHubActions-DevVPC-Plan-${{ github.run_id }}
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.5.0
-      
+
       - name: Terraform Init
-        working-directory: environments/prod/vpc
+        working-directory: environments/dev/vpc
         run: terraform init
-      
+
       - name: Terraform Plan
-        working-directory: environments/prod/vpc
+        working-directory: environments/dev/vpc
         env:
-          TF_VAR_workload_account_id: ${{ secrets.PROD_WORKLOAD_ACCOUNT_ID }}
+          TF_VAR_dev_workload_account_id: ${{ secrets.DEV_WORKLOAD_ACCOUNT_ID }}
+        run: |
+          echo "::group::Terraform Plan Output"
+          if [ "${{ inputs.action }}" == "destroy" ]; then
+            terraform plan -destroy -no-color | tee plan.txt
+          else
+            terraform plan -no-color | tee plan.txt
+          fi
+          echo "::endgroup::"
+
+      - name: Upload Plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan
+          path: environments/dev/vpc/plan.txt
+          retention-days: 5
+
+      - name: Plan Summary
+        run: |
+          echo "### 📋 Terraform Plan Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          tail -20 environments/dev/vpc/plan.txt >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+  # ════════════════════════════════════════════════════════════════════════
+  # JOB 2: APPLY (🔒 Approval required via "dev" environment 🔒)
+  # ════════════════════════════════════════════════════════════════════════
+  apply:
+    runs-on: ubuntu-latest
+    needs: plan
+    if: inputs.action == 'apply' || inputs.action == 'destroy'
+    
+    # ┌──────────────────────────────────────────────────────────────────┐
+    # │ 🔒 APPROVAL GATE FOR DEV ENVIRONMENT                             │
+    # │ Configure in: Settings → Environments → dev                      │
+    # └──────────────────────────────────────────────────────────────────┘
+    environment: dev  # ← APPROVAL GATE
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ap-southeast-2
+          role-session-name: GitHubActions-DevVPC-Apply-${{ github.run_id }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.5.0
+
+      - name: Terraform Init
+        working-directory: environments/dev/vpc
+        run: terraform init
+
+      # This step runs ONLY after manual approval
+      - name: Terraform Apply
+        working-directory: environments/dev/vpc
+        env:
+          TF_VAR_dev_workload_account_id: ${{ secrets.DEV_WORKLOAD_ACCOUNT_ID }}
         run: |
           if [ "${{ inputs.action }}" == "destroy" ]; then
-            terraform plan -destroy -out=tfplan
+            terraform destroy -auto-approve
           else
-            terraform plan -out=tfplan
+            terraform apply -auto-approve
           fi
-      
-      - name: Terraform Apply/Destroy
-        if: ${{ inputs.auto_approve }}
-        working-directory: environments/prod/vpc
-        env:
-          TF_VAR_workload_account_id: ${{ secrets.PROD_WORKLOAD_ACCOUNT_ID }}
-        run: terraform apply tfplan
+
+      - name: Terraform Output
+        if: success() && inputs.action == 'apply'
+        working-directory: environments/dev/vpc
+        run: |
+          echo "### 🎉 Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`json" >> $GITHUB_STEP_SUMMARY
+          terraform output -json >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
