@@ -15,4 +15,8 @@ module "vpc_workload" {
   public_subnet_cidrs  = var.workload_public_subnet_cidrs
   private_subnet_cidrs = var.workload_private_subnet_cidrs
   availability_zones   = var.availability_zones
+
+  # NAT Gateway disabled - prod routes via security VPC
+  enable_nat_gateway = false  
+
 }

@@ -22,7 +22,7 @@ data "terraform_remote_state" "dev_vpc" {
   }
 }
 
-# Prod VPC state (add this)
+# Prod VPC state
 data "terraform_remote_state" "prod_vpc" {
   backend = "s3"
   config = {
@@ -44,7 +44,7 @@ data "aws_route_table" "dev_workload_private_az_a" {
   provider = aws.dev_workload
   filter {
     name   = "tag:Name"
-    values = ["dev-dev-private-rt-1"]  # ← matches your VPC module naming
+    values = ["dev-workload-private-rt-1"]  # ← FIXED
   }
 }
 
@@ -52,7 +52,7 @@ data "aws_route_table" "dev_workload_private_az_b" {
   provider = aws.dev_workload
   filter {
     name   = "tag:Name"
-    values = ["dev-dev-private-rt-2"]  # ← matches your VPC module naming
+    values = ["dev-workload-private-rt-2"]  # ← FIXED
   }
 }
 
@@ -68,7 +68,7 @@ data "aws_route_table" "prod_workload_private_az_a" {
   provider = aws.prod_workload
   filter {
     name   = "tag:Name"
-    values = ["prod-prod-private-rt-1"]  # ← matches your VPC module naming
+    values = ["prod-workload-private-rt-1"]  # ← FIXED
   }
 }
 
@@ -76,7 +76,7 @@ data "aws_route_table" "prod_workload_private_az_b" {
   provider = aws.prod_workload
   filter {
     name   = "tag:Name"
-    values = ["prod-prod-private-rt-2"]  # ← matches your VPC module naming
+    values = ["prod-workload-private-rt-2"]  # ← FIXED
   }
 }
 

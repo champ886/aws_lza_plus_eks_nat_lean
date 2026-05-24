@@ -1,6 +1,7 @@
 name: VPC Peering
 
 on:
+  # ONLY manual trigger - safer for infrastructure
   workflow_dispatch:
     inputs:
       action:
@@ -8,9 +9,10 @@ on:
         required: true
         type: choice
         options:
-          - apply
-          - destroy
-        default: 'apply'
+          - plan    # Safe - just shows changes
+          - apply   # Deploys changes
+          - destroy # Removes resources
+        default: 'plan'
       
       auto_approve:
         description: 'Auto-approve'
