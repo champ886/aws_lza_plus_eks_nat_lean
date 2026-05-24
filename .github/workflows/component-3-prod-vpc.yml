@@ -1,12 +1,13 @@
 # ============================================================================
-# DEV VPC DEPLOYMENT WORKFLOW
+# PROD VPC DEPLOYMENT WORKFLOW
 # ============================================================================
-# Purpose: Deploy/destroy the dev workload VPC (private, no NAT)
-# Approval: Required via GitHub Environment "dev"
+# Purpose: Deploy/destroy the production workload VPC (private, no NAT)
+# Approval: ⚠️ STRICTEST - Required via GitHub Environment "prod" ⚠️
 # Dependencies: Should be deployed after security VPC
+# Recommendation: Configure "Prevent self-review" for prod environment
 # ============================================================================
 
-name: 2️⃣ Dev VPC
+name: 3️⃣ Prod VPC
 
 on:
   workflow_dispatch:
@@ -41,7 +42,7 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ap-southeast-2
-          role-session-name: GitHubActions-DevVPC-Plan-${{ github.run_id }}
+          role-session-name: GitHubActions-ProdVPC-Plan-${{ github.run_id }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -49,13 +50,13 @@ jobs:
           terraform_version: 1.5.0
 
       - name: Terraform Init
-        working-directory: environments/dev/vpc
+        working-directory: environments/prod/vpc
         run: terraform init
 
       - name: Terraform Plan
-        working-directory: environments/dev/vpc
+        working-directory: environments/prod/vpc
         env:
-          TF_VAR_dev_workload_account_id: ${{ secrets.DEV_WORKLOAD_ACCOUNT_ID }}
+          TF_VAR_workload_account_id: ${{ secrets.PROD_WORKLOAD_ACCOUNT_ID }}
         run: |
           echo "::group::Terraform Plan Output"
           if [ "${{ inputs.action }}" == "destroy" ]; then
@@ -69,7 +70,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: terraform-plan
-          path: environments/dev/vpc/plan.txt
+          path: environments/prod/vpc/plan.txt
           retention-days: 5
 
       - name: Plan Summary
@@ -77,11 +78,11 @@ jobs:
           echo "### 📋 Terraform Plan Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          tail -20 environments/dev/vpc/plan.txt >> $GITHUB_STEP_SUMMARY
+          tail -20 environments/prod/vpc/plan.txt >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
 
   # ════════════════════════════════════════════════════════════════════════
-  # JOB 2: APPLY (🔒 Approval required via "dev" environment 🔒)
+  # JOB 2: APPLY (🔒 STRICTEST APPROVAL for PRODUCTION 🔒)
   # ════════════════════════════════════════════════════════════════════════
   apply:
     runs-on: ubuntu-latest
@@ -89,10 +90,16 @@ jobs:
     if: inputs.action == 'apply' || inputs.action == 'destroy'
     
     # ┌──────────────────────────────────────────────────────────────────┐
-    # │ 🔒 APPROVAL GATE FOR DEV ENVIRONMENT                             │
-    # │ Configure in: Settings → Environments → dev                      │
+    # │ 🔒 PRODUCTION APPROVAL GATE                                      │
+    # │                                                                   │
+    # │ RECOMMENDED SETTINGS for "prod" environment:                     │
+    # │ - Required reviewers: 2 (need two people to approve)             │
+    # │ - Prevent self-review: enabled (can't approve own changes)       │
+    # │ - Wait timer: 5 minutes (cooling-off period)                     │
+    # │                                                                   │
+    # │ Configure in: Settings → Environments → prod                     │
     # └──────────────────────────────────────────────────────────────────┘
-    environment: dev  # ← APPROVAL GATE
+    environment: prod  # ← STRICTEST APPROVAL GATE
     
     steps:
       - name: Checkout
@@ -103,7 +110,7 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ap-southeast-2
-          role-session-name: GitHubActions-DevVPC-Apply-${{ github.run_id }}
+          role-session-name: GitHubActions-ProdVPC-Apply-${{ github.run_id }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -111,14 +118,15 @@ jobs:
           terraform_version: 1.5.0
 
       - name: Terraform Init
-        working-directory: environments/dev/vpc
+        working-directory: environments/prod/vpc
         run: terraform init
 
-      # This step runs ONLY after manual approval
+      # CRITICAL: This step deploys to PRODUCTION
+      # Only runs after ALL approvers have approved
       - name: Terraform Apply
-        working-directory: environments/dev/vpc
+        working-directory: environments/prod/vpc
         env:
-          TF_VAR_dev_workload_account_id: ${{ secrets.DEV_WORKLOAD_ACCOUNT_ID }}
+          TF_VAR_workload_account_id: ${{ secrets.PROD_WORKLOAD_ACCOUNT_ID }}
         run: |
           if [ "${{ inputs.action }}" == "destroy" ]; then
             terraform destroy -auto-approve
@@ -128,7 +136,7 @@ jobs:
 
       - name: Terraform Output
         if: success() && inputs.action == 'apply'
-        working-directory: environments/dev/vpc
+        working-directory: environments/prod/vpc
         run: |
           echo "### 🎉 Deployment Complete" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
