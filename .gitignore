@@ -32,3 +32,8 @@ tfplan
 # Secrets Files
 # -----------------------------------------------
 github-secrets.sh 
+
+# -----------------------------------------------
+# imported eks modules from gha state
+# -----------------------------------------------
+import-eks-resources.sh

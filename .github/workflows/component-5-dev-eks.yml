@@ -99,7 +99,7 @@ jobs:
     # │ Configure in: Settings → Environments → dev                      │
     # └──────────────────────────────────────────────────────────────────┘
     environment: dev  # ← APPROVAL GATE
-    timeout-minutes: 40  # ← Add this (EKS takes 15-20 min, give buffer)
+    timeout-minutes: 60  # ← Add this (EKS takes 15-20 min, give buffer)
     
     steps:
       - name: Checkout
