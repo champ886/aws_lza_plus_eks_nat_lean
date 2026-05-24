@@ -1,17 +1,16 @@
 # ============================================================================
-# COMPONENT WORKFLOW: SECURITY VPC
+# SECURITY VPC DEPLOYMENT - ENTERPRISE GRADE
 # ============================================================================
-# Deploy or destroy ONLY the security VPC independently
-# Use this for:
-#   - Testing VPC changes without redeploying entire stack
-#   - Troubleshooting security VPC issues
-#   - Selective destruction of just the security VPC
+# Features:
+#   - Manual approval required via GitHub Environment protection
+#   - Separate plan and apply steps for safety
+#   - Full audit trail in GitHub
+#   - Production-ready with approval gates
 # ============================================================================
 
-name: Security VPC
+name: 1️⃣ Security VPC
 
 on:
-  # ONLY manual trigger - safer for infrastructure
   workflow_dispatch:
     inputs:
       action:
@@ -19,20 +18,22 @@ on:
         required: true
         type: choice
         options:
-          - plan    # Safe - just shows changes
-          - apply   # Deploys changes
-          - destroy # Removes resources
+          - plan
+          - apply
+          - destroy
         default: 'plan'
-      
-      
+
 permissions:
   id-token: write
   contents: read
 
 jobs:
-  security-vpc:
+  # ──────────────────────────────────────────────────────────────────────
+  # JOB 1: PLAN (Always runs, no approval needed)
+  # ──────────────────────────────────────────────────────────────────────
+  plan:
     runs-on: ubuntu-latest
-    environment: shared
+    # No environment for plan - runs immediately
     
     steps:
       - name: Checkout
@@ -43,7 +44,7 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ap-southeast-2
-          role-session-name: GitHubActions-${{ github.run_id }}
+          role-session-name: GitHubActions-SecurityVPC-Plan-${{ github.run_id }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -59,33 +60,75 @@ jobs:
         env:
           TF_VAR_security_account_id: ${{ secrets.SECURITY_ACCOUNT_ID }}
         run: |
+          echo "::group::Terraform Plan Output"
           if [ "${{ inputs.action }}" == "destroy" ]; then
-            terraform plan -destroy -out=tfplan
+            terraform plan -destroy -no-color | tee plan.txt
           else
-            terraform plan -out=tfplan
+            terraform plan -no-color | tee plan.txt
           fi
+          echo "::endgroup::"
 
-      - name: Show Plan
-        working-directory: environments/shared/vpc
-        run: terraform show tfplan
-
-      - name: Manual Approval Gate
-        if: ${{ !inputs.auto_approve }}
-        uses: trstringer/manual-approval@v1
+      - name: Upload Plan
+        uses: actions/upload-artifact@v4
         with:
-          secret: ${{ github.TOKEN }}
-          approvers: ${{ github.actor }}
-          minimum-approvals: 1
-          issue-title: "Approve Security VPC ${{ inputs.action }}"
-          issue-body: "Please review the Terraform plan and approve to proceed with **${{ inputs.action }}**"
+          name: terraform-plan
+          path: environments/shared/vpc/plan.txt
+          retention-days: 5
 
-      - name: Terraform Apply/Destroy
+      - name: Plan Summary
+        run: |
+          echo "### 📋 Terraform Plan Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          tail -20 environments/shared/vpc/plan.txt >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+  # ──────────────────────────────────────────────────────────────────────
+  # JOB 2: APPLY (Requires approval via environment protection)
+  # ──────────────────────────────────────────────────────────────────────
+  apply:
+    runs-on: ubuntu-latest
+    needs: plan
+    if: inputs.action == 'apply' || inputs.action == 'destroy'
+    environment: shared  # ← APPROVAL GATE: Must be approved by reviewers
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ap-southeast-2
+          role-session-name: GitHubActions-SecurityVPC-Apply-${{ github.run_id }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.5.0
+
+      - name: Terraform Init
+        working-directory: environments/shared/vpc
+        run: terraform init
+
+      - name: Terraform Apply
         working-directory: environments/shared/vpc
         env:
           TF_VAR_security_account_id: ${{ secrets.SECURITY_ACCOUNT_ID }}
-        run: terraform apply tfplan
+        run: |
+          if [ "${{ inputs.action }}" == "destroy" ]; then
+            terraform destroy -auto-approve
+          else
+            terraform apply -auto-approve
+          fi
 
-      - name: Output Results
+      - name: Terraform Output
         if: success() && inputs.action == 'apply'
         working-directory: environments/shared/vpc
-        run: terraform output
+        run: |
+          echo "### 🎉 Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`json" >> $GITHUB_STEP_SUMMARY
+          terraform output -json >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
