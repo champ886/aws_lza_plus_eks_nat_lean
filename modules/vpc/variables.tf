@@ -58,3 +58,9 @@ variable "enable_nat_gateway" {
   type        = bool
   default     = false
 }
+
+variable "create_internet_gateway" {
+  description = "Whether to create an Internet Gateway for this VPC"
+  type        = bool
+  default     = true
+}

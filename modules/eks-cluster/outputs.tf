@@ -1,54 +1,41 @@
 # ============================================================================
-# EKS Cluster Module Outputs
+# VPC Endpoints - Keep AWS traffic internal
 # ============================================================================
 
-output "cluster_id" {
-  description = "EKS cluster ID"
-  value       = aws_eks_cluster.main.id
+data "aws_region" "current" {}
+
+resource "aws_vpc_endpoint" "interface" {
+  for_each = {
+    ecr_api = "com.amazonaws.${data.aws_region.current.name}.ecr.api"
+    ecr_dkr = "com.amazonaws.${data.aws_region.current.name}.ecr.dkr"
+    sts     = "com.amazonaws.${data.aws_region.current.name}.sts"
+    logs    = "com.amazonaws.${data.aws_region.current.name}.logs"
+    ec2     = "com.amazonaws.${data.aws_region.current.name}.ec2"
+  }
+  
+  vpc_id              = var.vpc_id
+  service_name        = each.value
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = var.private_subnet_ids
+  security_group_ids  = [aws_security_group.nodes.id]
+  private_dns_enabled = true
+  
+  tags = {
+    Name        = "${var.environment}-${each.key}-endpoint"
+    Environment = var.environment
+    ManagedBy   = "Terraform"
+  }
 }
 
-output "cluster_name" {
-  description = "EKS cluster name"
-  value       = aws_eks_cluster.main.name
-}
-
-output "cluster_endpoint" {
-  description = "EKS cluster endpoint"
-  value       = aws_eks_cluster.main.endpoint
-}
-
-output "cluster_version" {
-  description = "EKS cluster Kubernetes version"
-  value       = aws_eks_cluster.main.version
-}
-
-output "cluster_security_group_id" {
-  description = "Security group ID attached to the EKS cluster"
-  value       = aws_security_group.cluster.id
-}
-
-output "node_security_group_id" {
-  description = "Security group ID attached to the EKS nodes"
-  value       = aws_security_group.nodes.id
-}
-
-output "cluster_certificate_authority_data" {
-  description = "Base64 encoded certificate data for cluster authentication"
-  value       = aws_eks_cluster.main.certificate_authority[0].data
-  sensitive   = true
-}
-
-output "oidc_provider_arn" {
-  description = "ARN of the OIDC provider for IRSA"
-  value       = aws_iam_openid_connect_provider.eks.arn
-}
-
-output "oidc_provider_url" {
-  description = "URL of the OIDC provider"
-  value       = replace(aws_eks_cluster.main.identity[0].oidc[0].issuer, "https://", "")
-}
-
-output "node_role_arn" {
-  description = "ARN of the EKS node IAM role"
-  value       = aws_iam_role.node.arn
+resource "aws_vpc_endpoint" "s3" {
+  vpc_id            = var.vpc_id
+  service_name      = "com.amazonaws.${data.aws_region.current.name}.s3"
+  vpc_endpoint_type = "Gateway"
+  route_table_ids   = var.private_route_table_ids
+  
+  tags = {
+    Name        = "${var.environment}-s3-endpoint"
+    Environment = var.environment
+    ManagedBy   = "Terraform"
+  }
 }

@@ -43,3 +43,8 @@ variable "cluster_admin_arns" {
   type        = list(string)
   default     = []
 }
+
+variable "private_route_table_ids" {
+  description = "List of private route table IDs for VPC endpoints"
+  type        = list(string)
+}
