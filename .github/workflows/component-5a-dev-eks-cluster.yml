@@ -44,6 +44,14 @@ jobs:
         with:
           terraform_version: 1.5.0
 
+      - name: Clear Terraform Cache
+        working-directory: environments/dev/eks-cluster
+        run: |
+          rm -rf ~/.terraform.d/plugin-cache
+          rm -rf .terraform
+          rm -rf .terraform.lock.hcl
+
+
       - name: Terraform Init
         working-directory: environments/dev/eks-cluster
         run: terraform init
