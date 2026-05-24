@@ -1,0 +1,83 @@
+name: Dev VPC
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        type: choice
+        options:
+          - apply
+          - destroy
+        default: 'apply'
+      
+      auto_approve:
+        description: 'Auto-approve (skip manual confirmation)'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  dev-vpc:
+    runs-on: ubuntu-latest
+    environment: dev
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ap-southeast-2
+          role-session-name: GitHubActions-${{ github.run_id }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.5.0
+
+      - name: Terraform Init
+        working-directory: environments/dev/vpc
+        run: terraform init
+
+      - name: Terraform Plan
+        working-directory: environments/dev/vpc
+        env:
+          TF_VAR_dev_workload_account_id: ${{ secrets.DEV_WORKLOAD_ACCOUNT_ID }}
+        run: |
+          if [ "${{ inputs.action }}" == "destroy" ]; then
+            terraform plan -destroy -out=tfplan
+          else
+            terraform plan -out=tfplan
+          fi
+
+      - name: Show Plan
+        working-directory: environments/dev/vpc
+        run: terraform show tfplan
+
+      - name: Manual Approval Gate
+        if: ${{ !inputs.auto_approve }}
+        uses: trstringer/manual-approval@v1
+        with:
+          secret: ${{ github.TOKEN }}
+          approvers: ${{ github.actor }}
+          minimum-approvals: 1
+          issue-title: "Approve Dev VPC ${{ inputs.action }}"
+
+      - name: Terraform Apply/Destroy
+        working-directory: environments/dev/vpc
+        env:
+          TF_VAR_dev_workload_account_id: ${{ secrets.DEV_WORKLOAD_ACCOUNT_ID }}
+        run: terraform apply tfplan
+
+      - name: Output Results
+        if: success() && inputs.action == 'apply'
+        working-directory: environments/dev/vpc
+        run: terraform output
