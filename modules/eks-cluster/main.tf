@@ -51,6 +51,16 @@ resource "aws_security_group" "cluster" {
   }
 }
 
+resource "aws_security_group_rule" "cluster_egress_https" {
+  type              = "egress"
+  from_port         = 443
+  to_port           = 443
+  protocol          = "tcp"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.cluster.id
+  description       = "Cluster HTTPS egress"
+}
+
 resource "aws_security_group_rule" "cluster_egress_to_nodes" {
   type                     = "egress"
   from_port                = 1025
@@ -204,6 +214,62 @@ resource "aws_security_group_rule" "cluster_to_nodes" {
   description              = "Cluster to nodes"
 }
 
+# Allow EKS-managed cluster SG to talk to nodes
+# EKS auto-creates this SG (eks-cluster-sg-*) and nodes MUST be reachable from it
+resource "aws_security_group_rule" "eks_managed_sg_to_nodes" {
+  type                     = "ingress"
+  from_port                = 0
+  to_port                  = 65535
+  protocol                 = "-1"
+  security_group_id        = aws_security_group.nodes.id
+  source_security_group_id = aws_eks_cluster.main.vpc_config[0].cluster_security_group_id
+  description              = "EKS managed cluster SG to nodes"
+}
+
+# ─────────────────────────────────────────────────────────────────────────
+# Launch Template - puts nodes in BOTH SGs so they can join cluster
+# ─────────────────────────────────────────────────────────────────────────
+resource "aws_launch_template" "nodes" {
+  name_prefix   = "${var.cluster_name}-node-lt-"
+  instance_type = "t3.medium"
+
+  # Nodes must be in BOTH:
+  # 1. Our custom node SG (for our rules)
+  # 2. EKS-managed cluster SG (required to join cluster)
+  vpc_security_group_ids = [
+    aws_security_group.nodes.id,
+    aws_eks_cluster.main.vpc_config[0].cluster_security_group_id,
+  ]
+
+  block_device_mappings {
+    device_name = "/dev/xvda"
+    ebs {
+      volume_size           = 20
+      volume_type           = "gp3"
+      delete_on_termination = true
+    }
+  }
+
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required" # IMDSv2
+    http_put_response_hop_limit = 2          # Required for containers
+  }
+
+  tag_specifications {
+    resource_type = "instance"
+    tags = {
+      Name        = "${var.cluster_name}-node"
+      Environment = var.environment
+      ManagedBy   = "Terraform"
+    }
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
 # ─────────────────────────────────────────────────────────────────────────
 # EKS Node Group
 # ─────────────────────────────────────────────────────────────────────────
@@ -214,6 +280,11 @@ resource "aws_eks_node_group" "system" {
   subnet_ids      = var.private_subnet_ids
   version         = var.cluster_version
 
+  launch_template {
+    name    = aws_launch_template.nodes.name
+    version = aws_launch_template.nodes.latest_version
+  }
+
   scaling_config {
     desired_size = 2
     max_size     = 5
@@ -223,10 +294,6 @@ resource "aws_eks_node_group" "system" {
   update_config {
     max_unavailable = 1
   }
-
-  instance_types = ["t3.medium"]
-  capacity_type  = "ON_DEMAND"
-  disk_size      = 20
 
   depends_on = [
     aws_iam_role_policy_attachment.node_AmazonEKSWorkerNodePolicy,

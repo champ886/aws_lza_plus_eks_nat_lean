@@ -1,5 +1,5 @@
 # ============================================================================
-# Dev EKS Cluster Outputs
+# Outputs
 # ============================================================================
 
 output "cluster_id" {
@@ -13,42 +13,36 @@ output "cluster_name" {
 }
 
 output "cluster_endpoint" {
-  description = "EKS cluster API endpoint"
+  description = "EKS cluster endpoint"
   value       = module.eks_cluster.cluster_endpoint
 }
 
 output "cluster_version" {
-  description = "Kubernetes version"
+  description = "EKS cluster Kubernetes version"
   value       = module.eks_cluster.cluster_version
 }
 
 output "cluster_security_group_id" {
-  description = "Security group ID for cluster control plane"
+  description = "Cluster security group ID"
   value       = module.eks_cluster.cluster_security_group_id
 }
 
 output "node_security_group_id" {
-  description = "Security group ID for worker nodes"
+  description = "Node security group ID"
   value       = module.eks_cluster.node_security_group_id
 }
 
-output "cluster_certificate_authority_data" {
-  description = "Base64 encoded certificate data"
-  value       = module.eks_cluster.cluster_certificate_authority_data
-  sensitive   = true
-}
-
 output "oidc_provider_arn" {
-  description = "ARN of the OIDC provider for IRSA"
+  description = "OIDC provider ARN"
   value       = module.eks_cluster.oidc_provider_arn
 }
 
 output "oidc_provider_url" {
-  description = "URL of the OIDC provider"
+  description = "OIDC provider URL"
   value       = module.eks_cluster.oidc_provider_url
 }
 
 output "node_role_arn" {
-  description = "ARN of the IAM role for EKS nodes"
+  description = "Node IAM role ARN"
   value       = module.eks_cluster.node_role_arn
 }
