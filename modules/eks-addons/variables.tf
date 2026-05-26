@@ -14,29 +14,29 @@ variable "environment" {
 }
 
 # ─────────────────────────────────────────────────────────────────────────
-# Add-on Versions
+# Add-on Versions - defaults compatible with Kubernetes 1.32
 # ─────────────────────────────────────────────────────────────────────────
 
 variable "addon_version_vpc_cni" {
   description = "Version of the VPC CNI add-on"
   type        = string
-  default     = "v1.18.0-eksbuild.1"
+  default     = "v1.19.0-eksbuild.1"
 }
 
 variable "addon_version_coredns" {
   description = "Version of the CoreDNS add-on"
   type        = string
-  default     = "v1.11.1-eksbuild.4"
+  default     = "v1.11.3-eksbuild.1"
 }
 
 variable "addon_version_kube_proxy" {
   description = "Version of the kube-proxy add-on"
   type        = string
-  default     = "v1.29.0-eksbuild.1"
+  default     = "v1.32.0-eksbuild.2"
 }
 
 # ─────────────────────────────────────────────────────────────────────────
-# Optional: Add-on Configuration
+# Feature Flags
 # ─────────────────────────────────────────────────────────────────────────
 
 variable "enable_vpc_cni" {
