@@ -40,7 +40,8 @@ jobs:
   # Approval: NOT REQUIRED - this is read-only
   # ════════════════════════════════════════════════════════════════════════
   plan:
-    runs-on: ubuntu-latest
+    #runs-on: ubuntu-latest
+    runs-on: self-hosted  # <-- CHANGED TO SELF-HOSTED RUNNER FOR FASTER PLANS
     # NOTE: No "environment" specified here = no approval gate
     
     steps:
@@ -123,7 +124,8 @@ jobs:
   # Approval: ⚠️ REQUIRED via "shared" environment protection ⚠️
   # ════════════════════════════════════════════════════════════════════════
   apply:
-    runs-on: ubuntu-latest
+    # runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: plan  # Wait for plan job to complete first
     
     # ┌──────────────────────────────────────────────────────────────────┐
