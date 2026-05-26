@@ -24,7 +24,8 @@ permissions:
 
 jobs:
   plan:
-    runs-on: ubuntu-latest
+    #runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 10
 
     steps:
@@ -82,7 +83,8 @@ jobs:
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
 
   apply:
-    runs-on: ubuntu-latest
+    #runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: plan
     if: inputs.action == 'apply' || inputs.action == 'destroy'
     environment: dev
