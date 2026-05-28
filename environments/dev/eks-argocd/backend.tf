@@ -7,6 +7,7 @@ terraform {
     bucket = "tf-state-landing-zone-champ-001"
     key    = "aws-lza/dev/eks-argocd/terraform.tfstate"
     region = "ap-southeast-2"
-    use_lockfile = true
+    dynamodb_table = "tf-locks"
+    encrypt        = true
   }
 }
