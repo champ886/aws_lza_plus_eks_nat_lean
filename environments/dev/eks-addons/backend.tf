@@ -4,6 +4,7 @@ terraform {
     key            = "aws-lza/dev/eks-addons/terraform.tfstate"
     region         = "ap-southeast-2"
     dynamodb_table = "tf-locks"
+    use_lockfile   = true
     encrypt        = true
   }
 }
