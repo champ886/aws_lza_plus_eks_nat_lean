@@ -31,7 +31,7 @@ jobs:
   # JOB 1: PLAN (No approval required)
   # ════════════════════════════════════════════════════════════════════════
   plan:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted  # <-- CHANGED TO SELF-HOSTED RUNNER FOR FASTER PLANS
     
     steps:
       - name: Checkout
@@ -85,7 +85,7 @@ jobs:
   # JOB 2: APPLY (🔒 STRICTEST APPROVAL for PRODUCTION 🔒)
   # ════════════════════════════════════════════════════════════════════════
   apply:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted  # <-- CHANGED TO SELF-HOSTED RUNNER FOR APPLY JOB
     needs: plan
     if: inputs.action == 'apply' || inputs.action == 'destroy'
     
