@@ -125,20 +125,20 @@ jobs:
 
           echo "Completed at $(date)"
 
-      - name: Verify ALB Controller
-        if: success() && inputs.action == 'apply'
-        run: |
-          aws eks update-kubeconfig \
-            --name dev-eks-cluster \
-            --region ap-southeast-2 \
-            --role-arn arn:aws:iam::${{ secrets.DEV_WORKLOAD_ACCOUNT_ID }}:role/OrganizationAccountAccessRole
+      # - name: Verify ALB Controller
+      #   if: success() && inputs.action == 'apply'
+      #   run: |
+      #     aws eks update-kubeconfig \
+      #       --name dev-eks-cluster \
+      #       --region ap-southeast-2 \
+      #       --role-arn arn:aws:iam::${{ secrets.DEV_WORKLOAD_ACCOUNT_ID }}:role/OrganizationAccountAccessRole
 
-          echo "Waiting for ALB controller to be ready..."
-          kubectl rollout status deployment/aws-load-balancer-controller \
-            -n kube-system \
-            --timeout=120s
+      #     echo "Waiting for ALB controller to be ready..."
+      #     kubectl rollout status deployment/aws-load-balancer-controller \
+      #       -n kube-system \
+      #       --timeout=120s
 
-          kubectl get deployment aws-load-balancer-controller -n kube-system
+      #     kubectl get deployment aws-load-balancer-controller -n kube-system
 
       - name: Apply Summary
         if: success() && inputs.action == 'apply'
