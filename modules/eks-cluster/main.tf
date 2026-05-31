@@ -307,3 +307,16 @@ resource "aws_eks_node_group" "system" {
     ManagedBy   = "Terraform"
   }
 }
+
+# Allow ALB to reach pods directly (target-type: ip)
+# ALB controller auto-creates SGs - we allow all traffic from VPC CIDR
+# so any ALB can reach pods on any port
+resource "aws_security_group_rule" "nodes_from_alb" {
+  type              = "ingress"
+  from_port         = 80
+  to_port           = 80
+  protocol          = "tcp"
+  cidr_blocks       = ["10.0.0.0/16"]  # Dev VPC CIDR - ALB is in public subnet
+  security_group_id = aws_security_group.nodes.id
+  description       = "Allow ALB to reach pods on port 80"
+}
