@@ -57,7 +57,10 @@ jobs:
         env:
           TF_VAR_workload_account_id: ${{ secrets.DEV_WORKLOAD_ACCOUNT_ID }}
           TF_VAR_git_repo_url:        ${{ secrets.GIT_REPO_URL }}
+          TF_VAR_postgres_db:         ${{ secrets.POSTGRES_DB }}
+          TF_VAR_postgres_user:       ${{ secrets.POSTGRES_USER }}
           TF_VAR_postgres_password:   ${{ secrets.POSTGRES_PASSWORD }}
+          TF_VAR_pgadmin_email:       ${{ secrets.PGADMIN_EMAIL }}      ← missing?
           TF_VAR_pgadmin_password:    ${{ secrets.PGADMIN_PASSWORD }}
           TF_LOG: ${{ inputs.debug && 'DEBUG' || 'INFO' }}
         run: |
@@ -117,7 +120,10 @@ jobs:
         env:
           TF_VAR_workload_account_id: ${{ secrets.DEV_WORKLOAD_ACCOUNT_ID }}
           TF_VAR_git_repo_url:        ${{ secrets.GIT_REPO_URL }}
+          TF_VAR_postgres_db:         ${{ secrets.POSTGRES_DB }}
+          TF_VAR_postgres_user:       ${{ secrets.POSTGRES_USER }}
           TF_VAR_postgres_password:   ${{ secrets.POSTGRES_PASSWORD }}
+          TF_VAR_pgadmin_email:       ${{ secrets.PGADMIN_EMAIL }}
           TF_VAR_pgadmin_password:    ${{ secrets.PGADMIN_PASSWORD }}
           TF_LOG: ${{ inputs.debug && 'TRACE' || 'INFO' }}
         run: |
