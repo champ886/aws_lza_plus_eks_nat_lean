@@ -91,3 +91,5 @@ output "azs_count" {
   description = "Number of availability zones"
   value       = length(var.availability_zones)
 }
+
+

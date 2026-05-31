@@ -1,10 +1,9 @@
 # ============================================================================
 # ARGOCD MODULE
-# Installs ArgoCD via Helm then registers our gitops apps
 # ============================================================================
 
 # ─────────────────────────────────────────────────────────────────────────
-# Namespace for ArgoCD
+# Namespaces
 # ─────────────────────────────────────────────────────────────────────────
 resource "kubernetes_namespace" "argocd" {
   metadata {
@@ -12,9 +11,6 @@ resource "kubernetes_namespace" "argocd" {
   }
 }
 
-# ─────────────────────────────────────────────────────────────────────────
-# Namespace for our apps
-# ─────────────────────────────────────────────────────────────────────────
 resource "kubernetes_namespace" "apps" {
   metadata {
     name = "apps"
@@ -23,6 +19,7 @@ resource "kubernetes_namespace" "apps" {
 
 # ─────────────────────────────────────────────────────────────────────────
 # ArgoCD Helm Install
+# wait=true + timeout=600 ensures ALL pods ready and CRDs registered
 # ─────────────────────────────────────────────────────────────────────────
 resource "helm_release" "argocd" {
   name       = "argocd"
@@ -30,20 +27,19 @@ resource "helm_release" "argocd" {
   chart      = "argo-cd"
   namespace  = kubernetes_namespace.argocd.metadata[0].name
   version    = "7.4.1"
+  wait       = true
+  timeout    = 600
 
-  # Disable dex (SSO) - not needed for our setup
   set {
     name  = "dex.enabled"
     value = "false"
   }
 
-  # ClusterIP only - access via kubectl port-forward
   set {
     name  = "server.service.type"
     value = "ClusterIP"
   }
 
-  # Insecure mode - no TLS issues with port-forward
   set {
     name  = "server.insecure"
     value = "true"
@@ -53,9 +49,17 @@ resource "helm_release" "argocd" {
 }
 
 # ─────────────────────────────────────────────────────────────────────────
-# App Secrets - Created by Terraform BEFORE ArgoCD syncs the apps
-# Values come from terraform.tfvars locally or GitHub secrets in CI
-# Kubernetes pods reference these by name - nothing sensitive in git
+# Extra wait after Helm is done
+# CRDs are registered during pod startup but may need a moment
+# after pods report Ready before they are queryable
+# ─────────────────────────────────────────────────────────────────────────
+resource "time_sleep" "wait_for_argocd_crds" {
+  create_duration = "30s"
+  depends_on      = [helm_release.argocd]
+}
+
+# ─────────────────────────────────────────────────────────────────────────
+# App Secrets
 # ─────────────────────────────────────────────────────────────────────────
 resource "kubernetes_secret" "postgres" {
   metadata {
@@ -69,7 +73,6 @@ resource "kubernetes_secret" "postgres" {
     POSTGRES_PASSWORD = var.postgres_password
   }
 
-  # Must exist before ArgoCD deploys the postgres pod
   depends_on = [kubernetes_namespace.apps]
 }
 
@@ -84,88 +87,75 @@ resource "kubernetes_secret" "pgadmin" {
     PGADMIN_DEFAULT_PASSWORD = var.pgadmin_password
   }
 
-  # Must exist before ArgoCD deploys the pgadmin pod
   depends_on = [kubernetes_namespace.apps]
 }
 
 # ─────────────────────────────────────────────────────────────────────────
 # ArgoCD App - PostgreSQL
-# Tells ArgoCD to deploy postgres from our gitops folder
-# Secrets are already in the cluster before this syncs
+# Uses kubectl_manifest instead of kubernetes_manifest
+# kubectl_manifest does NOT validate CRDs at plan time - only at apply time
+# By apply time ArgoCD is running and CRDs exist
 # ─────────────────────────────────────────────────────────────────────────
-resource "kubernetes_manifest" "postgres_app" {
-  manifest = {
-    apiVersion = "argoproj.io/v1alpha1"
-    kind       = "Application"
-    metadata = {
-      name      = "postgres"
-      namespace = "argocd"
-    }
-    spec = {
-      project = "default"
-      source = {
-        repoURL        = var.git_repo_url
-        targetRevision = "main"
-        path           = "gitops/apps/postgres"
-      }
-      destination = {
-        server    = "https://kubernetes.default.svc"
-        namespace = "apps"
-      }
-      syncPolicy = {
-        automated = {
-          prune    = true
-          selfHeal = true
-        }
-        syncOptions = ["CreateNamespace=true"]
-      }
-    }
-  }
+resource "kubectl_manifest" "postgres_app" {
+  yaml_body = <<-YAML
+    apiVersion: argoproj.io/v1alpha1
+    kind: Application
+    metadata:
+      name: postgres
+      namespace: argocd
+    spec:
+      project: default
+      source:
+        repoURL: ${var.git_repo_url}
+        targetRevision: main
+        path: gitops/apps/postgres
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: apps
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+  YAML
 
-  # ArgoCD must be running AND secrets must exist before syncing
   depends_on = [
-    helm_release.argocd,
+    time_sleep.wait_for_argocd_crds,
     kubernetes_secret.postgres,
   ]
 }
 
 # ─────────────────────────────────────────────────────────────────────────
 # ArgoCD App - pgAdmin
-# Tells ArgoCD to deploy pgAdmin from our gitops folder
 # ─────────────────────────────────────────────────────────────────────────
-resource "kubernetes_manifest" "pgadmin_app" {
-  manifest = {
-    apiVersion = "argoproj.io/v1alpha1"
-    kind       = "Application"
-    metadata = {
-      name      = "pgadmin"
-      namespace = "argocd"
-    }
-    spec = {
-      project = "default"
-      source = {
-        repoURL        = var.git_repo_url
-        targetRevision = "main"
-        path           = "gitops/apps/pgadmin"
-      }
-      destination = {
-        server    = "https://kubernetes.default.svc"
-        namespace = "apps"
-      }
-      syncPolicy = {
-        automated = {
-          prune    = true
-          selfHeal = true
-        }
-        syncOptions = ["CreateNamespace=true"]
-      }
-    }
-  }
+resource "kubectl_manifest" "pgadmin_app" {
+  yaml_body = <<-YAML
+    apiVersion: argoproj.io/v1alpha1
+    kind: Application
+    metadata:
+      name: pgadmin
+      namespace: argocd
+    spec:
+      project: default
+      source:
+        repoURL: ${var.git_repo_url}
+        targetRevision: main
+        path: gitops/apps/pgadmin
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: apps
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+  YAML
 
-  # Postgres must be registered AND pgadmin secret must exist first
   depends_on = [
-    helm_release.argocd,
-    kubernetes_manifest.postgres_app,
+    time_sleep.wait_for_argocd_crds,
+    kubectl_manifest.postgres_app,
     kubernetes_secret.pgadmin,
   ]
 }

@@ -54,10 +54,8 @@ resource "aws_vpc_peering_connection_options" "accepter" {
 }
 
 # ─────────────────────────────────────────────────────────────────────────
-# INTRA-AZ ROUTES - AZ-a routes to AZ-a, AZ-b routes to AZ-a
+# REQUESTER ROUTES - Dev private subnets → Security VPC
 # ─────────────────────────────────────────────────────────────────────────
-
-# Requester AZ-a → accepter VPC CIDR
 resource "aws_route" "requester_to_accepter_az_a" {
   provider                  = aws.requester
   route_table_id            = var.requester_route_table_az_a_id
@@ -66,7 +64,6 @@ resource "aws_route" "requester_to_accepter_az_a" {
   depends_on                = [aws_vpc_peering_connection_accepter.main]
 }
 
-# Requester AZ-b → accepter VPC CIDR
 resource "aws_route" "requester_to_accepter_az_b" {
   provider                  = aws.requester
   route_table_id            = var.requester_route_table_az_b_id
@@ -94,7 +91,9 @@ resource "aws_route" "requester_default_egress_az_b" {
   depends_on                = [aws_vpc_peering_connection_accepter.main]
 }
 
-# RETURN ROUTES: security → dev VPC CIDR
+# ─────────────────────────────────────────────────────────────────────────
+# ACCEPTER PRIVATE ROUTES - Security private subnets → Dev VPC
+# ─────────────────────────────────────────────────────────────────────────
 resource "aws_route" "accepter_to_requester_az_a" {
   provider                  = aws.accepter
   route_table_id            = var.accepter_route_table_az_a_id
@@ -106,6 +105,22 @@ resource "aws_route" "accepter_to_requester_az_a" {
 resource "aws_route" "accepter_to_requester_az_b" {
   provider                  = aws.accepter
   route_table_id            = var.accepter_route_table_az_b_id
+  destination_cidr_block    = var.requester_vpc_cidr
+  vpc_peering_connection_id = aws_vpc_peering_connection.main.id
+  depends_on                = [aws_vpc_peering_connection_accepter.main]
+}
+
+# ─────────────────────────────────────────────────────────────────────────
+# ACCEPTER PUBLIC ROUTE - Security PUBLIC route table → Requester VPC
+# THIS IS THE MISSING PIECE!
+# NAT gateway sits in the public subnet. When internet traffic returns
+# to the NAT gateway it needs to route back to the requester VPC CIDR.
+# Without this route, return traffic is dropped at the public subnet.
+# ─────────────────────────────────────────────────────────────────────────
+resource "aws_route" "accepter_public_to_requester" {
+  count                     = var.route_internet_via_accepter ? 1 : 0
+  provider                  = aws.accepter
+  route_table_id            = var.accepter_public_route_table_id
   destination_cidr_block    = var.requester_vpc_cidr
   vpc_peering_connection_id = aws_vpc_peering_connection.main.id
   depends_on                = [aws_vpc_peering_connection_accepter.main]

@@ -103,3 +103,14 @@ data "aws_route_table" "security_private_az_b" {
     values = ["shared-security-private-rt-2"]
   }
 }
+
+# Security VPC public route table
+# Needed for NAT gateway return routes to workload VPCs
+data "aws_route_table" "security_public" {
+  provider = aws.security
+
+  filter {
+    name   = "tag:Name"
+    values = ["shared-security-public-rt"]
+  }
+}

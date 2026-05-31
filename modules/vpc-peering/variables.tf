@@ -52,3 +52,11 @@ variable "route_internet_via_accepter" {
   type        = bool
   default     = false
 }
+
+# Add this to modules/vpc-peering/variables.tf
+
+variable "accepter_public_route_table_id" {
+  description = "Accepter (security) public route table ID - needed for NAT gateway return routes"
+  type        = string
+  default     = ""  # Optional - only required when route_internet_via_accepter = true
+}

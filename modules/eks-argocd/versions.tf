@@ -1,7 +1,3 @@
-# ============================================================================
-# Provider Requirements
-# ============================================================================
-
 terraform {
   required_version = ">= 1.5.0"
 
@@ -17,6 +13,14 @@ terraform {
     kubernetes = {
       source  = "hashicorp/kubernetes"
       version = "~> 2.0"
+    }
+    time = {
+      source  = "hashicorp/time"
+      version = "~> 0.9"
+    }
+    kubectl = {
+      source  = "gavinbunney/kubectl"   # ← NOT hashicorp/kubectl
+      version = "~> 1.14"
     }
   }
 }
