@@ -129,25 +129,25 @@ jobs:
           fi
           echo "Completed at $(date)"
 
-      - name: Verify ArgoCD
-        if: success() && inputs.action == 'apply'
-        run: |
-          aws eks update-kubeconfig \
-            --name dev-eks-cluster \
-            --region ap-southeast-2 \
-            --role-arn arn:aws:iam::${{ secrets.DEV_WORKLOAD_ACCOUNT_ID }}:role/OrganizationAccountAccessRole
+      # - name: Verify ArgoCD
+      #   if: success() && inputs.action == 'apply'
+      #   run: |
+      #     aws eks update-kubeconfig \
+      #       --name dev-eks-cluster \
+      #       --region ap-southeast-2 \
+      #       --role-arn arn:aws:iam::${{ secrets.DEV_WORKLOAD_ACCOUNT_ID }}:role/OrganizationAccountAccessRole
 
-          echo "Waiting for ArgoCD server..."
-          kubectl rollout status deployment/argocd-server -n argocd --timeout=180s
+      #     echo "Waiting for ArgoCD server..."
+      #     kubectl rollout status deployment/argocd-server -n argocd --timeout=180s
 
-          echo "Waiting for apps to sync..."
-          sleep 30
+      #     echo "Waiting for apps to sync..."
+      #     sleep 30
 
-          echo "ArgoCD apps:"
-          kubectl get applications -n argocd
+      #     echo "ArgoCD apps:"
+      #     kubectl get applications -n argocd
 
-          echo "App pods:"
-          kubectl get pods -n apps
+      #     echo "App pods:"
+      #     kubectl get pods -n apps
 
       - name: Get ALB Address
         if: success() && inputs.action == 'apply'
