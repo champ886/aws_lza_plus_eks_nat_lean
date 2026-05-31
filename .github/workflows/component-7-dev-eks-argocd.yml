@@ -156,30 +156,30 @@ jobs:
           kubectl get pods -n apps
 
       - name: Get ALB Address
-              if: success() && inputs.action == 'apply'
-              run: |
-                echo "Current identity:"
-                aws sts get-caller-identity
+        if: success() && inputs.action == 'apply'
+        run: |
+          echo "Current identity:"
+          aws sts get-caller-identity
 
-                echo "Assuming role into dev account..."
-                aws eks update-kubeconfig \
-                  --name dev-eks-cluster \
-                  --region ap-southeast-2 \
-                  --role-arn arn:aws:iam::${{ secrets.DEV_WORKLOAD_ACCOUNT_ID }}:role/OrganizationAccountAccessRole
+          echo "Assuming role into dev account..."
+          aws eks update-kubeconfig \
+            --name dev-eks-cluster \
+            --region ap-southeast-2 \
+            --role-arn arn:aws:iam::${{ secrets.DEV_WORKLOAD_ACCOUNT_ID }}:role/OrganizationAccountAccessRole
 
-                echo "Kubeconfig updated, checking cluster..."
-                kubectl get nodes
+          echo "Kubeconfig updated, checking cluster..."
+          kubectl get nodes
 
-                echo "Waiting for ALB..."
-                for i in {1..18}; do
-                  ALB=$(kubectl get ingress pgadmin -n apps \
-                    -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null)
-                  if [ -n "$ALB" ]; then
-                    echo "### 🎉 Deployment Complete" >> $GITHUB_STEP_SUMMARY
-                    echo "**pgAdmin URL:** http://$ALB" >> $GITHUB_STEP_SUMMARY
-                    echo "**Login:** \`${{ secrets.PGADMIN_EMAIL }}\` / (from PGADMIN_PASSWORD secret)" >> $GITHUB_STEP_SUMMARY
-                    break
-                  fi
-                  echo "Waiting... ($i/18)"
-                  sleep 10
-                done
+          echo "Waiting for ALB..."
+          for i in {1..18}; do
+            ALB=$(kubectl get ingress pgadmin -n apps \
+              -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null)
+            if [ -n "$ALB" ]; then
+              echo "### 🎉 Deployment Complete" >> $GITHUB_STEP_SUMMARY
+              echo "**pgAdmin URL:** http://$ALB" >> $GITHUB_STEP_SUMMARY
+              echo "**Login:** \`${{ secrets.PGADMIN_EMAIL }}\` / (from PGADMIN_PASSWORD secret)" >> $GITHUB_STEP_SUMMARY
+              break
+            fi
+            echo "Waiting... ($i/18)"
+            sleep 10
+          done
