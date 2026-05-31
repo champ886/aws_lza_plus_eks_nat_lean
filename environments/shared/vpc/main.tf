@@ -18,37 +18,6 @@ module "vpc_security" {
   enable_nat_gateway   = true
 }
 
-# -----------------------------------------------
-# PUBLIC ROUTE TABLE - PEERING RETURN ROUTES
-# NAT gateway sits in the public subnet.
-# When dev/prod nodes send traffic:
-#   node → peering → security private → NAT → internet
-# Return traffic comes back to NAT public IP then:
-#   NAT → needs to route 10.0.x.x / 10.2.x.x → peering
-# The public route table needs these routes or
-# return traffic is dropped and internet fails.
-# -----------------------------------------------
-data "terraform_remote_state" "peering" {
-  backend = "s3"
-  config = {
-    bucket = "tf-state-landing-zone-champ-001"
-    key    = "aws-lza/peering/terraform.tfstate"
-    region = "ap-southeast-2"
-  }
-}
-
-# Dev VPC (10.0.0.0/16) return route on public route table
-resource "aws_route" "public_to_dev" {
-  provider                  = aws.security
-  route_table_id            = module.vpc_security.public_route_table_id
-  destination_cidr_block    = "10.0.0.0/16"
-  vpc_peering_connection_id = data.terraform_remote_state.peering.outputs.dev_peering_connection_id
-}
-
-# Prod VPC (10.2.0.0/16) return route on public route table
-resource "aws_route" "public_to_prod" {
-  provider                  = aws.security
-  route_table_id            = module.vpc_security.public_route_table_id
-  destination_cidr_block    = "10.2.0.0/16"
-  vpc_peering_connection_id = data.terraform_remote_state.peering.outputs.prod_peering_connection_id
-}
+# NOTE: Public route table return routes (10.0.0.0/16, 10.2.0.0/16)
+# are managed by the Transit Gateway module, not here.
+# TGW handles all internet egress return routing via TGW attachments.

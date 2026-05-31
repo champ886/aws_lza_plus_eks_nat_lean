@@ -40,3 +40,8 @@ output "security_nat_gateway_public_ip" {
   description = "Security VPC NAT Gateway public IP"
   value       = module.vpc_security.nat_gateway_public_ip
 }
+
+output "security_public_route_table_id" {
+  description = "Security VPC public route table ID"
+  value       = module.vpc_security.public_route_table_id
+}

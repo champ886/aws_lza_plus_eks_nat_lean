@@ -12,3 +12,4 @@ output "tgw_prod_attachment_id" {
   description = "Prod VPC TGW attachment ID"
   value       = module.transit_gateway.tgw_prod_attachment_id
 }
+

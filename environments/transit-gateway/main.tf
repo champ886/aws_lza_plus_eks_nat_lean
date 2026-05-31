@@ -12,17 +12,17 @@ module "transit_gateway" {
     aws.prod     = aws.prod
   }
 
-  environment    = var.environment
-  aws_region     = var.aws_region
-  dev_account_id = var.dev_workload_account_id
+  environment     = var.environment
+  aws_region      = var.aws_region
+  dev_account_id  = var.dev_workload_account_id
   prod_account_id = var.prod_workload_account_id
 
-  # Security VPC (hub) - from shared VPC remote state
-  security_vpc_id                      = data.terraform_remote_state.shared_vpc.outputs.vpc_id
-  security_private_subnet_ids          = data.terraform_remote_state.shared_vpc.outputs.private_subnet_ids
-  security_private_route_table_az_a_id = data.terraform_remote_state.shared_vpc.outputs.private_route_table_ids[0]
-  security_private_route_table_az_b_id = data.terraform_remote_state.shared_vpc.outputs.private_route_table_ids[1]
-  security_public_route_table_id       = data.terraform_remote_state.shared_vpc.outputs.public_route_table_id
+  # Security VPC (hub) - matched to actual shared VPC output names
+  security_vpc_id                      = data.terraform_remote_state.shared_vpc.outputs.security_vpc_id
+  security_private_subnet_ids          = data.terraform_remote_state.shared_vpc.outputs.security_private_subnet_ids
+  security_private_route_table_az_a_id = data.terraform_remote_state.shared_vpc.outputs.security_private_route_table_ids[0]
+  security_private_route_table_az_b_id = data.terraform_remote_state.shared_vpc.outputs.security_private_route_table_ids[1]
+  security_public_route_table_id       = data.terraform_remote_state.shared_vpc.outputs.security_public_route_table_id
 
   # Dev VPC (spoke) - from dev VPC remote state
   dev_vpc_id                      = data.terraform_remote_state.dev_vpc.outputs.vpc_id
