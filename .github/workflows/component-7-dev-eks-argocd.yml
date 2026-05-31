@@ -141,7 +141,7 @@ jobs:
           aws eks update-kubeconfig \
             --name dev-eks-cluster \
             --region ap-southeast-2 \
-            --role-arn arn:aws:iam::${{ secrets.DEV_WORKLOAD_ACCOUNT_ID }}:role/OrganizationAccountAccessRole
+            --role-arn arn:aws:iam::435321828725:role/OrganizationAccountAccessRole
 
           echo "Waiting for ArgoCD server..."
           kubectl rollout status deployment/argocd-server -n argocd --timeout=180s
@@ -149,10 +149,7 @@ jobs:
           echo "Waiting for apps to sync..."
           sleep 30
 
-          echo "ArgoCD apps:"
           kubectl get applications -n argocd
-
-          echo "App pods:"
           kubectl get pods -n apps
 
       - name: Get ALB Address
