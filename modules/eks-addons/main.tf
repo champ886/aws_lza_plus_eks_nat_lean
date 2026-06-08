@@ -62,32 +62,46 @@ resource "aws_eks_addon" "kube_proxy" {
 }
 
 # ─────────────────────────────────────────────────────────────────────────
-# Pod Identity Agent Add-on
+# Default StorageClass - gp3
+# Required for PVCs (Kubecost, Prometheus)
+# gp3 is cheaper than gp2 - 20% lower cost, better baseline performance
 # ─────────────────────────────────────────────────────────────────────────
-resource "aws_eks_addon" "pod_identity" {
-  count = var.enable_pod_identity ? 1 : 0
+resource "kubernetes_storage_class" "gp3" {
+  metadata {
+    name = "gp3"
+    annotations = {
+      "storageclass.kubernetes.io/is-default-class" = "true"
+    }
+  }
 
-  cluster_name                = var.cluster_name
-  addon_name                  = "eks-pod-identity-agent"
-  resolve_conflicts_on_create = "OVERWRITE"
-  resolve_conflicts_on_update = "PRESERVE"
+  storage_provisioner    = "ebs.csi.aws.com"
+  reclaim_policy         = "Delete"
+  allow_volume_expansion = true
+  volume_binding_mode    = "WaitForFirstConsumer"
 
-  tags = {
-    Name        = "${var.cluster_name}-pod-identity-agent"
-    Environment = var.environment
-    ManagedBy   = "Terraform"
+  parameters = {
+    type      = "gp3"
+    encrypted = "true"
   }
 }
 
 # ─────────────────────────────────────────────────────────────────────────
-# VPC CSI Add-on for PV provisioning
+# EBS CSI Driver
 # ─────────────────────────────────────────────────────────────────────────
 
 resource "aws_eks_addon" "ebs_csi" {
-  cluster_name                = var.cluster_name
-  addon_name                  = "aws-ebs-csi-driver"
+  cluster_name = var.cluster_name
+  addon_name   = "aws-ebs-csi-driver"
+
+  service_account_role_arn = aws_iam_role.ebs_csi.arn
+
   resolve_conflicts_on_create = "OVERWRITE"
   resolve_conflicts_on_update = "PRESERVE"
+
+  depends_on = [
+    aws_eks_addon.pod_identity,
+    aws_eks_pod_identity_association.ebs_csi
+  ]
 
   tags = {
     Name        = "${var.cluster_name}-ebs-csi"

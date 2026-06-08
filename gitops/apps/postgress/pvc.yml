@@ -10,7 +10,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: gp2   # EKS default storage class
+  storageClassName: gp3   # EKS default storage class
   resources:
     requests:
       storage: 5Gi
