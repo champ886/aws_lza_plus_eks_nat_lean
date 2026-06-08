@@ -208,11 +208,6 @@ resource "helm_release" "karpenter" {
   timeout    = 300
 
   set {
-    name  = "controller.image.repository"
-    value = "602401143452.dkr.ecr.${data.aws_region.current.name}.amazonaws.com/eks/karpenter/controller"
-  }
-
-  set {
     name  = "settings.clusterName"
     value = var.cluster_name
   }

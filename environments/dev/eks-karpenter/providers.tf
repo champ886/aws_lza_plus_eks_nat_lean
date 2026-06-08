@@ -2,6 +2,15 @@
 # Provider Configuration
 # ============================================================================
 
+terraform {
+  required_providers {
+    kubectl = {
+      source  = "gavinbunney/kubectl"
+      version = "~> 1.14"
+    }
+  }
+}
+
 provider "aws" {
   alias  = "workload"
   region = var.aws_region
@@ -31,3 +40,4 @@ provider "kubectl" {
   token                  = data.aws_eks_cluster_auth.main.token
   load_config_file       = false
 }
+
