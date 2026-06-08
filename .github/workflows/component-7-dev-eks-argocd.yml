@@ -17,6 +17,10 @@ on:
         required: false
         type: boolean
         default: false
+  workflow_run:
+    workflows: ["6️⃣ Dev EKS ALB Controller"]
+    types: [completed]
+    branches: [main]
 
 permissions:
   id-token: write
@@ -24,8 +28,11 @@ permissions:
 
 jobs:
   plan:
-    runs-on: self-hosted  # <-- CHANGED TO SELF-HOSTED RUNNER FOR FASTER PLANS
-    timeout-minutes: 10
+    runs-on: self-hosted
+    timeout-minutes: 15
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
 
     steps:
       - name: Checkout
@@ -60,12 +67,13 @@ jobs:
           TF_VAR_postgres_db:         ${{ secrets.POSTGRES_DB }}
           TF_VAR_postgres_user:       ${{ secrets.POSTGRES_USER }}
           TF_VAR_postgres_password:   ${{ secrets.POSTGRES_PASSWORD }}
-          TF_VAR_pgadmin_email:       ${{ secrets.PGADMIN_EMAIL }}      ← missing?
+          TF_VAR_pgadmin_email:       ${{ secrets.PGADMIN_EMAIL }}
           TF_VAR_pgadmin_password:    ${{ secrets.PGADMIN_PASSWORD }}
           TF_LOG: ${{ inputs.debug && 'DEBUG' || 'INFO' }}
         run: |
           echo "::group::Terraform Plan Output"
-          if [ "${{ inputs.action }}" == "destroy" ]; then
+          ACTION="${{ inputs.action || 'apply' }}"
+          if [ "$ACTION" == "destroy" ]; then
             terraform plan -destroy -no-color | tee plan.txt
           else
             terraform plan -no-color | tee plan.txt
@@ -81,18 +89,19 @@ jobs:
 
       - name: Plan Summary
         run: |
-          echo "### 📋 ArgoCD Plan Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 ArgoCD Plan" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           tail -30 environments/dev/eks-argocd/plan.txt >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
 
   apply:
-    runs-on: self-hosted  # <-- CHANGED TO SELF-HOSTED RUNNER FOR APPLY JOB
+    runs-on: self-hosted
     needs: plan
-    if: inputs.action == 'apply' || inputs.action == 'destroy'
     environment: dev
     timeout-minutes: 30
+    if: |
+      github.event_name == 'workflow_run' ||
+      (github.event_name == 'workflow_dispatch' && (inputs.action == 'apply' || inputs.action == 'destroy'))
 
     steps:
       - name: Checkout
@@ -115,7 +124,7 @@ jobs:
         working-directory: environments/dev/eks-argocd
         run: terraform init
 
-      - name: Terraform Apply
+      - name: Stage 1 - Install ArgoCD + Secrets
         working-directory: environments/dev/eks-argocd
         env:
           TF_VAR_workload_account_id: ${{ secrets.DEV_WORKLOAD_ACCOUNT_ID }}
@@ -127,63 +136,53 @@ jobs:
           TF_VAR_pgadmin_password:    ${{ secrets.PGADMIN_PASSWORD }}
           TF_LOG: ${{ inputs.debug && 'TRACE' || 'INFO' }}
         run: |
-          echo "Starting ArgoCD deployment at $(date)"
-          if [ "${{ inputs.action }}" == "destroy" ]; then
+          ACTION="${{ inputs.action || 'apply' }}"
+          if [ "$ACTION" == "destroy" ]; then
             terraform destroy -auto-approve -no-color
           else
-            terraform apply -auto-approve -no-color
+            terraform apply -auto-approve -no-color \
+              -target=module.eks_argocd.kubernetes_namespace.argocd \
+              -target=module.eks_argocd.kubernetes_namespace.apps \
+              -target=module.eks_argocd.helm_release.argocd \
+              -target=module.eks_argocd.kubernetes_secret.postgres \
+              -target=module.eks_argocd.kubernetes_secret.pgadmin
           fi
-          echo "Completed at $(date)"
 
-      # - name: Verify ArgoCD
-      #   if: success() && inputs.action == 'apply'
-      #   run: |
-      #     aws eks update-kubeconfig \
-      #       --name dev-eks-cluster \
-      #       --region ap-southeast-2 \
-      #       --role-arn arn:aws:iam::435321828725:role/OrganizationAccountAccessRole
+      - name: Wait for ArgoCD CRDs
+        if: inputs.action != 'destroy'
+        run: sleep 60
 
-      #     echo "Waiting for ArgoCD server..."
-      #     kubectl rollout status deployment/argocd-server -n argocd --timeout=180s
-
-      #     echo "Waiting for apps to sync..."
-      #     sleep 30
-
-      #     kubectl get applications -n argocd
-      #     kubectl get pods -n apps
+      - name: Stage 2 - Create ArgoCD Applications
+        if: inputs.action != 'destroy'
+        working-directory: environments/dev/eks-argocd
+        env:
+          TF_VAR_workload_account_id: ${{ secrets.DEV_WORKLOAD_ACCOUNT_ID }}
+          TF_VAR_git_repo_url:        ${{ secrets.GIT_REPO_URL }}
+          TF_VAR_postgres_db:         ${{ secrets.POSTGRES_DB }}
+          TF_VAR_postgres_user:       ${{ secrets.POSTGRES_USER }}
+          TF_VAR_postgres_password:   ${{ secrets.POSTGRES_PASSWORD }}
+          TF_VAR_pgadmin_email:       ${{ secrets.PGADMIN_EMAIL }}
+          TF_VAR_pgadmin_password:    ${{ secrets.PGADMIN_PASSWORD }}
+        run: terraform apply -auto-approve -no-color
 
       - name: Get ALB Address
-        if: success() && inputs.action == 'apply'
+        if: success() && inputs.action != 'destroy'
         run: |
-          # Explicitly assume role into dev workload account
-          CREDS=$(aws sts assume-role \
-            --role-arn arn:aws:iam::435321828725:role/OrganizationAccountAccessRole \
-            --role-session-name GHA-GetALB-${{ github.run_id }} \
-            --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' \
-            --output text)
-
-          export AWS_ACCESS_KEY_ID=$(echo $CREDS | awk '{print $1}')
-          export AWS_SECRET_ACCESS_KEY=$(echo $CREDS | awk '{print $2}')
-          export AWS_SESSION_TOKEN=$(echo $CREDS | awk '{print $3}')
-
-          # Verify we are now in dev account
-          aws sts get-caller-identity
-
-          # Update kubeconfig using dev account credentials
           aws eks update-kubeconfig \
             --name dev-eks-cluster \
-            --region ap-southeast-2
+            --region ap-southeast-2 \
+            --role-arn arn:aws:iam::435321828725:role/OrganizationAccountAccessRole
 
-          echo "Waiting for ALB..."
           for i in {1..18}; do
             ALB=$(kubectl get ingress pgadmin -n apps \
               -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null)
             if [ -n "$ALB" ]; then
-              echo "### 🎉 Deployment Complete" >> $GITHUB_STEP_SUMMARY
+              echo "### ✅ ArgoCD + pgAdmin Complete" >> $GITHUB_STEP_SUMMARY
               echo "**pgAdmin URL:** http://$ALB" >> $GITHUB_STEP_SUMMARY
-              echo "**Login:** check PGADMIN_EMAIL + PGADMIN_PASSWORD secrets" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "⏭️ Next: **8️⃣ Dev EKS Karpenter** will trigger automatically" >> $GITHUB_STEP_SUMMARY
               break
             fi
-            echo "Waiting... ($i/18)"
+            echo "Waiting for ALB... ($i/18)"
             sleep 10
           done

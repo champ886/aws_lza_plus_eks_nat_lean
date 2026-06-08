@@ -17,6 +17,10 @@ on:
         required: false
         type: boolean
         default: false
+  workflow_run:
+    workflows: ["5️⃣a Dev EKS Cluster"]
+    types: [completed]
+    branches: [main]
 
 permissions:
   id-token: write
@@ -24,9 +28,12 @@ permissions:
 
 jobs:
   plan:
-    runs-on: self-hosted  # <-- CHANGED TO SELF-HOSTED RUNNER FOR FASTER PLANS
-    timeout-minutes: 10
-    
+    runs-on: self-hosted
+    timeout-minutes: 15
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -36,7 +43,7 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ap-southeast-2
-          role-session-name: GHA-DevEKSAddons-Plan-${{ github.run_id }}
+          role-session-name: GHA-Dev-EKS-Add-ons-Plan-${{ github.run_id }}
           role-duration-seconds: 3600
 
       - name: Setup Terraform
@@ -59,7 +66,8 @@ jobs:
           TF_LOG: ${{ inputs.debug && 'DEBUG' || 'INFO' }}
         run: |
           echo "::group::Terraform Plan Output"
-          if [ "${{ inputs.action }}" == "destroy" ]; then
+          ACTION="${{ inputs.action || 'apply' }}"
+          if [ "$ACTION" == "destroy" ]; then
             terraform plan -destroy -no-color | tee plan.txt
           else
             terraform plan -no-color | tee plan.txt
@@ -69,25 +77,26 @@ jobs:
       - name: Upload Plan
         uses: actions/upload-artifact@v4
         with:
-          name: eks-addons-plan
+          name: dev-eks-add-ons-plan
           path: environments/dev/eks-addons/plan.txt
           retention-days: 5
 
       - name: Plan Summary
         run: |
-          echo "### 📋 EKS Add-ons Plan Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 Dev EKS Add-ons Plan" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           tail -30 environments/dev/eks-addons/plan.txt >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
 
   apply:
-    runs-on: self-hosted  # <-- CHANGED TO SELF-HOSTED RUNNER FOR APPLY JOB
+    runs-on: self-hosted
     needs: plan
-    if: inputs.action == 'apply' || inputs.action == 'destroy'
     environment: dev
-    timeout-minutes: 60
-    
+    timeout-minutes: 30
+    if: |
+      github.event_name == 'workflow_run' ||
+      (github.event_name == 'workflow_dispatch' && (inputs.action == 'apply' || inputs.action == 'destroy'))
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -97,7 +106,7 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ap-southeast-2
-          role-session-name: GHA-DevEKSAddons-Apply-${{ github.run_id }}
+          role-session-name: GHA-Dev-EKS-Add-ons-Apply-${{ github.run_id }}
           role-duration-seconds: 3600
 
       - name: Setup Terraform
@@ -115,28 +124,20 @@ jobs:
           TF_VAR_workload_account_id: ${{ secrets.DEV_WORKLOAD_ACCOUNT_ID }}
           TF_LOG: ${{ inputs.debug && 'TRACE' || 'INFO' }}
         run: |
-          echo "Starting add-ons deployment at $(date)"
-          
-          if [ "${{ inputs.action }}" == "destroy" ]; then
+          ACTION="${{ inputs.action || 'apply' }}"
+          if [ "$ACTION" == "destroy" ]; then
             terraform destroy -auto-approve -no-color
           else
             terraform apply -auto-approve -no-color
           fi
-          
-          echo "Completed at $(date)"
 
-      - name: Show Add-on Versions
-        if: success() && inputs.action == 'apply'
+      - name: Summary
+        if: success()
         working-directory: environments/dev/eks-addons
         run: |
-          echo "### 🎉 EKS Add-ons Deployed" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Add-on Versions:**" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`json" >> $GITHUB_STEP_SUMMARY
-          terraform output -json >> $GITHUB_STEP_SUMMARY
+          echo "### ✅ Dev EKS Add-ons Complete" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          terraform output 2>/dev/null >> $GITHUB_STEP_SUMMARY || true
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Verify add-ons:**" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-          echo "kubectl get pods -n kube-system" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "⏭️ Next: **6️⃣ Dev EKS ALB Controller** will trigger automatically" >> $GITHUB_STEP_SUMMARY
