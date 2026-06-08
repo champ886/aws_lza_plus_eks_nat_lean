@@ -6,4 +6,11 @@ terraform {
     dynamodb_table = "tf-locks"
     encrypt        = true
   }
+  required_providers {
+    kubectl = {
+      source  = "gavinbunney/kubectl"
+      version = "~> 1.14"
+    }
+  }
+  
 }
