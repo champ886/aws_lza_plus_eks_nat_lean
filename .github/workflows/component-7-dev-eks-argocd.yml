@@ -168,6 +168,10 @@ jobs:
       - name: Get ALB Address
         if: success() && inputs.action != 'destroy'
         run: |
+          echo "Commit: $(git rev-parse HEAD)"
+          echo "File content:"
+          grep -A8 "Get ALB" .github/workflows/component-7-dev-eks-argocd.yml || echo "grep failed"
+          
           aws eks update-kubeconfig \
             --name dev-eks-cluster \
             --region ap-southeast-2 \
