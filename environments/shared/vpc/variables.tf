@@ -31,11 +31,3 @@ variable "availability_zones" {
   type    = list(string)
   default = ["ap-southeast-2a", "ap-southeast-2b"]
 }
-
-variable "dev_workload_account_id" {
-  type = string
-}
-
-variable "prod_workload_account_id" {
-  type = string
-}
