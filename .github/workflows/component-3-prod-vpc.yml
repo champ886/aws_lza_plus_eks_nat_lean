@@ -62,7 +62,7 @@ jobs:
       - name: Terraform Plan
         working-directory: environments/prod/vpc
         env:
-          TF_VAR_prod_workload_account_id: ${{ secrets.PROD_WORKLOAD_ACCOUNT_ID }}
+          TF_VAR_workload_account_id: ${{ secrets.PROD_WORKLOAD_ACCOUNT_ID }}
           TF_LOG: ${{ inputs.debug && 'DEBUG' || 'INFO' }}
         run: |
           echo "::group::Terraform Plan Output"
@@ -121,7 +121,7 @@ jobs:
       - name: Terraform Apply
         working-directory: environments/prod/vpc
         env:
-          TF_VAR_prod_workload_account_id: ${{ secrets.PROD_WORKLOAD_ACCOUNT_ID }}
+          TF_VAR_workload_account_id: ${{ secrets.PROD_WORKLOAD_ACCOUNT_ID }}
           TF_LOG: ${{ inputs.debug && 'TRACE' || 'INFO' }}
         run: |
           ACTION="${{ inputs.action || 'apply' }}"
