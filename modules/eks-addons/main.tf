@@ -78,3 +78,20 @@ resource "aws_eks_addon" "pod_identity" {
     ManagedBy   = "Terraform"
   }
 }
+
+# ─────────────────────────────────────────────────────────────────────────
+# VPC CSI Add-on for PV provisioning
+# ─────────────────────────────────────────────────────────────────────────
+
+resource "aws_eks_addon" "ebs_csi" {
+  cluster_name                = var.cluster_name
+  addon_name                  = "aws-ebs-csi-driver"
+  resolve_conflicts_on_create = "OVERWRITE"
+  resolve_conflicts_on_update = "PRESERVE"
+
+  tags = {
+    Name        = "${var.cluster_name}-ebs-csi"
+    Environment = var.environment
+    ManagedBy   = "Terraform"
+  }
+}
