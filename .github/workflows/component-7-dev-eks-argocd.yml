@@ -168,14 +168,20 @@ jobs:
       - name: Get ALB Address
         if: success() && inputs.action != 'destroy'
         run: |
-          echo "Commit: $(git rev-parse HEAD)"
-          echo "File content:"
-          grep -A8 "Get ALB" .github/workflows/component-7-dev-eks-argocd.yml || echo "grep failed"
-          
+          # Explicitly assume dev role first
+          CREDS=$(aws sts assume-role \
+            --role-arn arn:aws:iam::435321828725:role/OrganizationAccountAccessRole \
+            --role-session-name GHA-GetALB \
+            --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' \
+            --output text)
+
+          export AWS_ACCESS_KEY_ID=$(echo $CREDS | awk '{print $1}')
+          export AWS_SECRET_ACCESS_KEY=$(echo $CREDS | awk '{print $2}')
+          export AWS_SESSION_TOKEN=$(echo $CREDS | awk '{print $3}')
+
           aws eks update-kubeconfig \
             --name dev-eks-cluster \
-            --region ap-southeast-2 \
-            --role-arn arn:aws:iam::435321828725:role/OrganizationAccountAccessRole
+            --region ap-southeast-2
 
           for i in {1..18}; do
             ALB=$(kubectl get ingress pgadmin -n apps \
@@ -183,7 +189,6 @@ jobs:
             if [ -n "$ALB" ]; then
               echo "### ✅ ArgoCD + pgAdmin Complete" >> $GITHUB_STEP_SUMMARY
               echo "**pgAdmin URL:** http://$ALB" >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
               echo "⏭️ Next: **8️⃣ Dev EKS Karpenter** will trigger automatically" >> $GITHUB_STEP_SUMMARY
               break
             fi
