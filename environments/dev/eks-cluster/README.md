@@ -231,3 +231,61 @@ kubectl get pods -n kube-system
 - [AWS EKS Documentation](https://docs.aws.amazon.com/eks/latest/userguide/)
 - [EKS Best Practices](https://aws.github.io/aws-eks-best-practices/)
 - [IRSA Documentation](https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html)
+
+
+
+# environments/dev/eks-cluster
+
+The EKS control plane and its initial managed node group, deployed into the Dev VPC's private subnets.
+
+## What it creates
+
+<table>
+<tr><th>Resource</th><th>Detail</th></tr>
+<tr><td>EKS cluster</td><td><code>dev-eks-cluster</code>, Kubernetes 1.32, private+public API endpoint</td></tr>
+<tr><td>OIDC provider</td><td>Required for IRSA — every other module (ALB, ArgoCD, Karpenter, Kubecost) creates IAM roles trusting this provider</td></tr>
+<tr><td>Managed node group</td><td><code>dev-eks-cluster-system-nodes</code> — runs cluster-critical pods (CoreDNS, ALB controller, ArgoCD, Karpenter controller itself) until Karpenter takes over workload scaling</td></tr>
+<tr><td>Launch template</td><td>Custom launch template attaching nodes to <strong>both</strong> the custom node security group <em>and</em> the EKS-auto-created cluster security group — without both, nodes fail to join</td></tr>
+<tr><td>Node IAM role</td><td><code>dev-eks-cluster-node-role</code> with <code>AmazonEKS_CNI_Policy</code>, <code>AmazonEC2ContainerRegistryReadOnly</code>, <code>AmazonEKSWorkerNodePolicy</code></td></tr>
+</table>
+
+## Variables
+
+<table>
+<tr><th>Variable</th><th>Source</th></tr>
+<tr><td>workload_account_id</td><td>DEV_WORKLOAD_ACCOUNT_ID secret</td></tr>
+</table>
+
+## Dependencies
+
+<table>
+<tr><th>Remote state</th><th>For</th></tr>
+<tr><td>dev/vpc</td><td>vpc_id, private_subnet_ids, public_subnet_ids</td></tr>
+</table>
+
+Deployed by workflow 5️⃣a, triggered after Transit Gateway (4️⃣b). Triggers EKS Add-ons (5️⃣b). Timeout 60 min — cluster creation alone takes ~10-15 min.
+
+## Key outputs
+
+<table>
+<tr><th>Output</th><th>Consumed by</th></tr>
+<tr><td>cluster_name, cluster_endpoint, cluster_ca</td><td>every downstream eks-* environment</td></tr>
+<tr><td>oidc_provider_arn, oidc_provider_url</td><td>eks-alb, eks-argocd, eks-karpenter, eks-kubecost (IRSA trust policies)</td></tr>
+<tr><td>node_role_arn</td><td>eks-karpenter (Karpenter-launched nodes reuse this role via instance profile)</td></tr>
+<tr><td>node_security_group_id</td><td>eks-alb (ALB→node SG rule), eks-karpenter (discovery tag)</td></tr>
+</table>
+
+## Standalone run
+
+```bash
+cd environments/dev/eks-cluster
+terraform init
+terraform apply -var="workload_account_id=435321828725"
+
+aws eks update-kubeconfig --name dev-eks-cluster --region ap-southeast-2 \
+  --role-arn arn:aws:iam::435321828725:role/OrganizationAccountAccessRole
+```
+
+## Gotcha
+
+EKS auto-creates a cluster security group (<code>eks-cluster-sg-*</code>) separate from the custom node SG defined here. Nodes must be members of **both** — handled via the launch template's <code>vpc_security_group_ids</code>. If nodes show <code>NotReady</code> and never join, check this first.
