@@ -1,5 +1,8 @@
 # ============================================================================
-# ARGOCD MODULE
+# ARGOCD MODULE - App of Apps pattern
+# Terraform: installs ArgoCD, creates secrets, creates ONE root app
+# ArgoCD: reads gitops/apps.yaml and deploys pgadmin + postgres automatically
+# To add new apps: edit gitops/apps.yaml, push to main - no Terraform needed
 # ============================================================================
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -60,6 +63,7 @@ resource "time_sleep" "wait_for_argocd_crds" {
 
 # ─────────────────────────────────────────────────────────────────────────
 # App Secrets
+# Terraform owns secrets, NOT ArgoCD - keeps credentials out of git
 # ─────────────────────────────────────────────────────────────────────────
 resource "kubernetes_secret" "postgres" {
   metadata {
@@ -91,27 +95,32 @@ resource "kubernetes_secret" "pgadmin" {
 }
 
 # ─────────────────────────────────────────────────────────────────────────
-# ArgoCD App - PostgreSQL
-# Uses kubectl_manifest instead of kubernetes_manifest
-# kubectl_manifest does NOT validate CRDs at plan time - only at apply time
-# By apply time ArgoCD is running and CRDs exist
+# ROOT App of Apps - the ONLY Application Terraform creates
+# Points at gitops/ directory. ArgoCD reads gitops/apps.yaml and
+# gitops/platform.yaml from there and deploys everything else.
+#
+# Uses kubectl_manifest instead of kubernetes_manifest because
+# kubectl_manifest does NOT validate CRDs at plan time - only at apply time.
+# By apply time ArgoCD is running and the Application CRD exists.
 # ─────────────────────────────────────────────────────────────────────────
-resource "kubectl_manifest" "postgres_app" {
+resource "kubectl_manifest" "root_app" {
   yaml_body = <<-YAML
     apiVersion: argoproj.io/v1alpha1
     kind: Application
     metadata:
-      name: postgres
+      name: root
       namespace: argocd
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
     spec:
       project: default
       source:
         repoURL: ${var.git_repo_url}
         targetRevision: main
-        path: gitops/apps/postgres
+        path: gitops
       destination:
         server: https://kubernetes.default.svc
-        namespace: apps
+        namespace: argocd
       syncPolicy:
         automated:
           prune: true
@@ -123,39 +132,6 @@ resource "kubectl_manifest" "postgres_app" {
   depends_on = [
     time_sleep.wait_for_argocd_crds,
     kubernetes_secret.postgres,
-  ]
-}
-
-# ─────────────────────────────────────────────────────────────────────────
-# ArgoCD App - pgAdmin
-# ─────────────────────────────────────────────────────────────────────────
-resource "kubectl_manifest" "pgadmin_app" {
-  yaml_body = <<-YAML
-    apiVersion: argoproj.io/v1alpha1
-    kind: Application
-    metadata:
-      name: pgadmin
-      namespace: argocd
-    spec:
-      project: default
-      source:
-        repoURL: ${var.git_repo_url}
-        targetRevision: main
-        path: gitops/apps/pgadmin
-      destination:
-        server: https://kubernetes.default.svc
-        namespace: apps
-      syncPolicy:
-        automated:
-          prune: true
-          selfHeal: true
-        syncOptions:
-          - CreateNamespace=true
-  YAML
-
-  depends_on = [
-    time_sleep.wait_for_argocd_crds,
-    kubectl_manifest.postgres_app,
     kubernetes_secret.pgadmin,
   ]
 }
