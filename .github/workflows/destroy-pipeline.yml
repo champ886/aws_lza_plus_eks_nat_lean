@@ -10,6 +10,12 @@
 # ============================================================================
 name: 🔥 Pipeline (destroy)
 
+# 🔽 ADDED PERMISSIONS BLOCK HERE 🔽
+permissions:
+  id-token: write
+  contents: read
+# 🔼 ============================ 🔼
+
 on:
   workflow_dispatch:
     inputs:
