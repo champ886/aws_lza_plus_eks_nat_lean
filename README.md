@@ -69,6 +69,74 @@ Internet egress always flows: workload VPC → Transit Gateway → Security VPC 
 
 ## What is deployed and what it costs
 
+## Data plane architecture — image pulls, security, observability
+
+```
+┌────────────────────────────┐   ┌──────────────────────────────────────┐
+│  Public registries          │   │  GitHub (gitops/)                     │
+│  public.ecr.aws · quay.io   │   │  ArgoCD watches for manifest changes  │
+│  ghcr.io · gcr.io           │   │                                        │
+└──────────────┬───────────────┘   └──────────────────┬─────────────────────┘
+               │ via TGW → Security NAT                │ via TGW → Security NAT
+               ▼                                        ▼
+┌──────────────────────────── Dev VPC · 10.0.0.0/16 ──────────────────────────┐
+│ ┌─ Public subnets ────────────────────────────────────────────────────────┐ │
+│ │  Internet Gateway              ALB (pgAdmin ingress, target-type=ip)     │ │
+│ └────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│ ┌─ Security layer — Security Groups + NACL (no firewall appliance) ──────┐ │
+│ │  Node SG:   ingress from ALB SGs → :80  ·  egress 0.0.0.0/0 → TGW       │ │
+│ │  Cluster SG: nodes → :443  ·  default NACL: allow all in/out            │ │
+│ └──────────────────────────────────────────────────────────────────────--┘ │
+│                                                                              │
+│ ┌─ Private subnets · EKS data plane ─────────────────────────────────────┐ │
+│ │  Karpenter NodePool — spot + on-demand · t3/t3a medium/large            │ │
+│ │  consolidateAfter: 30s · limits 16 vCPU / 32Gi                          │ │
+│ │  ┌──────────────────┐ ┌──────────────────┐ ┌─────────────────────────┐│ │
+│ │  │ Spot nodes        │ │ On-demand nodes  │ │ Managed node group       ││ │
+│ │  │ (Karpenter)       │ │ (Karpenter)      │ │ CoreDNS·ALB ctrl·ArgoCD  ││ │
+│ │  │                   │ │                  │ │ (phased out via Karpenter)││ │
+│ │  └──────────────────┘ └──────────────────┘ └─────────────────────────┘│ │
+│ │                                                                          │ │
+│ │  In-cluster tooling                                                      │ │
+│ │  ┌──────────────────┐ ┌──────────────────┐ ┌─────────────────────────┐│ │
+│ │  │ ArgoCD            │ │ Karpenter ctrl   │ │ Kubecost + Prometheus   ││ │
+│ │  │ App of Apps       │ │ provision/drain  │ │ per-pod cost · 15d ret. ││ │
+│ │  └──────────────────┘ └──────────────────┘ └─────────────────────────┘│ │
+│ │                                                                          │ │
+│ │  ┌─ Public registry pull path ─────────┐ ┌─ Regional ECR pull path ───┐│ │
+│ │  │ node → node SG :443                 │ │ node → ecr.api endpoint    ││ │
+│ │  │  → TGW → Security NAT               │ │  → ecr.dkr endpoint        ││ │
+│ │  │  → IGW → internet → registry        │ │  → S3 gateway (free)       ││ │
+│ │  └──────────────────────────────────────┘ └────────────────────────--┘│ │
+│ └──────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│ ┌─ VPC endpoints — ECR/S3 stay inside AWS, no NAT/TGW charge ─────────────┐ │
+│ │  ecr.api + ecr.dkr (interface)  │  s3 (gateway, free)                   │ │
+│ │  sts + logs + ec2 (interface)                                           │ │
+│ └──────────────────────────────────────────────────────────────────────--┘ │
+└──────────────────────────────────────────────────────────────────────────--┘
+                          │
+                          ▼
+┌─ Security VPC · 10.1.0.0/16 ───────────────────────────────────────────────┐
+│  NAT Gateway (shared, single AZ) — Internet Gateway — TGW attachment       │
+└─────────────────────────────────────────────────────────────────────────--┘
+
+  ── solid:  via TGW → Security NAT (public registries, general egress)
+  ·····  dashed: via VPC interface/gateway endpoint (ECR, S3 — stays in AWS)
+```
+
+<table>
+<tr><th>Path</th><th>Used for</th><th>Cost</th></tr>
+<tr><td>Node SG → TGW → Security NAT → IGW</td><td>public.ecr.aws, quay.io, ghcr.io, gcr.io, Helm repos, ArgoCD git sync over HTTPS</td><td>NAT + TGW data processing charges</td></tr>
+<tr><td>Node → ecr.api / ecr.dkr interface endpoints</td><td>Regional ECR mirror (<code>602401143452...</code>) for ALB controller, EBS CSI images</td><td>Interface endpoint hourly + data charges, no NAT/TGW</td></tr>
+<tr><td>Node → S3 gateway endpoint</td><td>ECR image layer storage (backs ecr.dkr), Terraform state if run from in-VPC</td><td>Free</td></tr>
+<tr><td>Node → sts / logs / ec2 interface endpoints</td><td>IRSA token exchange, CloudWatch logs, Karpenter EC2 API calls</td><td>Interface endpoint hourly + data charges, no NAT/TGW</td></tr>
+</table>
+
+Routing every AWS-API call through VPC endpoints instead of the TGW/NAT path is what keeps the lean cost model viable — Karpenter, IRSA, and ECR pulls for AWS-maintained images never touch the shared NAT.
+
+
 <table>
 <tr><th>Resource</th><th>Account</th><th>Cost</th></tr>
 <tr><td>AWS Organizations + OUs</td><td>Management</td><td>Free</td></tr>
