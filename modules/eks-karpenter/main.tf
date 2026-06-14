@@ -82,6 +82,11 @@ resource "aws_iam_role_policy" "karpenter_controller" {
         Action   = "pricing:GetProducts"
         Resource = "*"
       },
+            {
+        Effect   = "Allow"
+        Action   = "ssm:GetParameter"
+        Resource = "arn:aws:ssm:*::parameter/aws/service/*"
+      },
       {
         Effect = "Allow"
         Action = [
