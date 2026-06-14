@@ -211,7 +211,10 @@ Deployed once as <code>type = ORGANIZATION</code> from the management account �
 │   ├── vpc/                   VPC, subnets, IGW, per-AZ route tables
 │   └── vpc-peering/           Peering connection, auto-accept, routes, DNS
 ├── gitops/                    ArgoCD-managed manifests (apps + platform)
-└── .github/workflows/         11 chained GitHub Actions pipelines (component-1 .. 9)
+└── .github/workflows/
+    ├── component-1 .. 9       11 reusable workflows (workflow_call + workflow_dispatch)
+    ├── orchestrator.yml        🚀 full apply pipeline, forward order 1 → 9
+    └── destroy-pipeline.yml    🔥 full destroy pipeline, reverse order 9 → 1
 ```
 
 Every environment folder and <code>gitops/</code> has its own <code>README.md</code> with specifics — purpose, variables, dependencies, and how to run it standalone.
@@ -227,15 +230,29 @@ terraform init && terraform apply -var-file="terraform.tfvars"
 
 This single environment creates the org, OUs, member accounts, SCPs, Config, logging, and the org-wide IAM Access Analyzer. Everything below depends on the accounts and OIDC role this creates.
 
-### Phase 2 — Networking + EKS platform (GitHub Actions, chained)
+### Phase 2 — Networking + EKS platform (GitHub Actions, orchestrated)
 
-Eleven chained workflows (<code>component-1</code> through <code>component-9</code>, plus <code>4b</code>). Each auto-triggers the next on successful apply via <code>workflow_run</code>, with a manual approval gate before every apply. Destroy is always manual, never cascades.
+Eleven environments (<code>component-1</code> through <code>component-9</code>, plus <code>4b</code>) are each a **reusable workflow** (<code>workflow_call</code>), runnable individually via <code>workflow_dispatch</code> for standalone testing. Two top-level workflows orchestrate the full pipeline:
+
+<table>
+<tr><th>Workflow</th><th>Trigger</th><th>Order</th><th>Action</th></tr>
+<tr><td>🚀 Pipeline (apply)</td><td>Manual <code>workflow_dispatch</code>, choose <code>plan</code> or <code>apply</code></td><td>1 → 9 (forward)</td><td>Passed explicitly to every job via <code>with: action:</code></td></tr>
+<tr><td>🔥 Pipeline (destroy)</td><td>Manual <code>workflow_dispatch</code>, no action choice</td><td>9 → 1 (reverse)</td><td>Hardcoded <code>destroy</code> — running this workflow IS the deliberate action</td></tr>
+</table>
 
 ```
-1️⃣ Security VPC → 2️⃣ Dev VPC → 3️⃣ Prod VPC → 4️⃣ Peering → 4️⃣b Transit Gateway →
-5️⃣a EKS Cluster → 5️⃣b EKS Add-ons → 6️⃣ ALB Controller → 7️⃣ ArgoCD →
-8️⃣ Karpenter → 9️⃣ Kubecost
+🚀 apply:    1️⃣ Security VPC → 2️⃣ Dev VPC → 3️⃣ Prod VPC → 4️⃣ Peering → 4️⃣b Transit Gateway →
+             5️⃣a EKS Cluster → 5️⃣b EKS Add-ons → 6️⃣ ALB Controller → 7️⃣ ArgoCD →
+             8️⃣ Karpenter → 9️⃣ Kubecost
+
+🔥 destroy:  9️⃣ Kubecost → 8️⃣ Karpenter → 7️⃣ ArgoCD → 6️⃣ ALB Controller → 5️⃣b EKS Add-ons →
+             5️⃣a EKS Cluster → 4️⃣b Transit Gateway → 4️⃣ Peering → 3️⃣ Prod VPC →
+             2️⃣ Dev VPC → 1️⃣ Security VPC
 ```
+
+Each component job uses <code>needs:</code> to enforce ordering within a single run — visible as one job graph in the Actions tab — with a manual approval gate (<code>environment: shared/dev/prod</code>) before every apply or destroy. <code>secrets: inherit</code> passes secrets to each called workflow; <code>permissions: { id-token: write, contents: read }</code> must be declared at the top level of both orchestrator workflows themselves — permissions do **not** inherit automatically the way secrets do, and a reusable workflow requesting OIDC (<code>id-token: write</code>) will fail with <code>"requesting 'id-token: write', but is only allowed 'id-token: none'"</code> if the caller doesn't grant it.
+
+Why this design over the earlier <code>workflow_run</code> chaining approach: <code>workflow_run</code> fires on *any* completion (including destroy), giving no clean way to prevent a destroy from cascading into the next workflow's apply. Separate forward/reverse orchestrators make that structurally impossible — a destroy can only ever run via the destroy pipeline, in the correct reverse order.
 
 Full step-by-step and known gotchas: <a href="RUNBOOK.md">RUNBOOK.md</a>.
 
