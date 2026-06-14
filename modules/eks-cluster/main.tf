@@ -167,7 +167,20 @@ resource "aws_iam_role_policy_attachment" "node_AmazonEC2ContainerRegistryReadOn
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
   role       = aws_iam_role.node.name
 }
+# ─────────────────────────────────────────────────────────────────────────
+# Instance Profile for Node Role
+# Required by Karpenter - EC2NodeClass references this by name
+# ─────────────────────────────────────────────────────────────────────────
+resource "aws_iam_instance_profile" "node" {
+  name = "${var.cluster_name}-node-role"
+  role = aws_iam_role.node.name
 
+  tags = {
+    Name        = "${var.cluster_name}-node-role"
+    Environment = var.environment
+    ManagedBy   = "Terraform"
+  }
+}
 # ─────────────────────────────────────────────────────────────────────────
 # Security Group for Worker Nodes
 # ─────────────────────────────────────────────────────────────────────────
@@ -180,6 +193,7 @@ resource "aws_security_group" "nodes" {
     Name                                        = "${var.cluster_name}-node-sg"
     Environment                                 = var.environment
     "kubernetes.io/cluster/${var.cluster_name}" = "owned"
+    "karpenter.sh/discovery"                    = var.cluster_name
     ManagedBy                                   = "Terraform"
   }
 }

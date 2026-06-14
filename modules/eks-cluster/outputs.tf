@@ -52,3 +52,7 @@ output "node_role_arn" {
   description = "ARN of the EKS node IAM role"
   value       = aws_iam_role.node.arn
 }
+output "node_instance_profile_name" {
+  description = "Name of the IAM instance profile for Karpenter-launched nodes"
+  value       = aws_iam_instance_profile.node.name
+}
