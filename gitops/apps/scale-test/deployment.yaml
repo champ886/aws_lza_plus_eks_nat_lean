@@ -1,0 +1,23 @@
+# gitops/apps/scale-test/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: karpenter-scale-test
+  namespace: apps
+spec:
+  replicas: 10
+  selector:
+    matchLabels:
+      app: karpenter-scale-test
+  template:
+    metadata:
+      labels:
+        app: karpenter-scale-test
+    spec:
+      containers:
+        - name: nginx
+          image: public.ecr.aws/nginx/nginx:latest
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi

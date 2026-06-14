@@ -47,3 +47,31 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+
+# ============================================================================
+# Scale Test App
+# Used to test Karpenter scaling - deploy this and watch new nodes come up!
+# ============================================================================
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: scale-test
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/champ886/aws_lza_plus_eks_nat_lean.git
+    targetRevision: main
+    path: gitops/apps/scale-test
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: apps
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
